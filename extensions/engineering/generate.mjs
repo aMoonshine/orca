@@ -34,7 +34,7 @@ for (const path of await files(vendor)) {
   }
   const resources = []
   for (const resource of await files(dirname(path))) {
-    if (resource === path || !resource.endsWith('.md')) {
+    if (resource === path || relative(dirname(path), resource).split(/[\\/]/)[0] === 'agents') {
       continue
     }
     resources.push({

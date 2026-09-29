@@ -1,3 +1,4 @@
+import { desktopOrchestrationEnvelope } from './desktop-orchestration-envelope'
 import { ipcMain } from 'electron'
 import {
   addEnvironmentFromPairingCode,
@@ -243,7 +244,7 @@ function registerPassiveCallHandler(getUserDataPath: () => string): void {
           args.params,
           args.timeoutMs,
           args.expectedEnvironmentPairingRevision,
-          undefined,
+          desktopOrchestrationEnvelope(args.method),
           { expectedEnvironmentRuntimeId: args.expectedEnvironmentRuntimeId }
         )
       } catch (error) {
