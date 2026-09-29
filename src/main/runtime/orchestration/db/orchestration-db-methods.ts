@@ -27,6 +27,8 @@ import type { LegacyQuestionAcknowledgeMethods } from './legacy/legacy-question-
 import type { LegacyQuestionLookupMethods } from './legacy/legacy-question-lookup'
 import type { LegacyRecoveryCohortMethods } from './legacy/legacy-recovery-cohort'
 import type { LegacyReplyOperationMethods } from './legacy/legacy-reply-operation'
+import type { FileClaimStoreMethods } from './file-claims/file-claim-store'
+import type { DecisionRegisterMethods } from './decisions/decision-register'
 import type { LegacyWorkerCompletionMethods } from './legacy/legacy-worker-completion'
 import type { DirectMailboxRoutingMethods } from './messages/direct-mailbox-routing'
 import type { ForeignDirectMailboxRoutingMethods } from './messages/foreign-direct-mailbox-routing'
@@ -43,6 +45,7 @@ import type { RunCoordinatorMailRoutingMethods } from './runs/run-coordinator-ma
 import type { RunCreateMethods } from './runs/run-create'
 import type { RunDeliveryMethods } from './runs/run-delivery'
 import type { RunLookupMethods } from './runs/run-lookup'
+import type { RunWorkModeMethods } from './runs/run-work-mode'
 import type { LegacyCoordinatorMailTakeoverMethods } from './runs/legacy-coordinator-mail-takeover'
 import type { AdoptLegacyRunMethods } from './schema/adopt-legacy-run'
 import type { BackfillLegacyQuestionThreadsMethods } from './schema/backfill-legacy-question-threads'
@@ -89,6 +92,7 @@ export type OrchestrationDbMethods = AttemptObservationStoreMethods &
   RunCreateMethods &
   RunBindingMethods &
   RunLookupMethods &
+  RunWorkModeMethods &
   RunCoordinatorMailRoutingMethods &
   LegacyCoordinatorMailTakeoverMethods &
   RunDeliveryMethods &
@@ -134,4 +138,6 @@ export type OrchestrationDbMethods = AttemptObservationStoreMethods &
   WorkerReportSettlementMethods &
   DecisionGateStoreMethods &
   CoordinatorRunStoreMethods &
-  OrchestrationResetMethods
+  OrchestrationResetMethods &
+  FileClaimStoreMethods &
+  DecisionRegisterMethods

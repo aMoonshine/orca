@@ -44,6 +44,7 @@ import { attachRunCoordinatorMailRouting } from './runs/run-coordinator-mail-rou
 import { attachRunCreate } from './runs/run-create'
 import { attachRunDelivery } from './runs/run-delivery'
 import { attachRunLookup } from './runs/run-lookup'
+import { attachRunWorkMode } from './runs/run-work-mode'
 import { attachLegacyCoordinatorMailTakeover } from './runs/legacy-coordinator-mail-takeover'
 import { attachAdoptLegacyRun } from './schema/adopt-legacy-run'
 import { attachBackfillLegacyQuestionThreads } from './schema/backfill-legacy-question-threads'
@@ -66,6 +67,8 @@ import { attachWorkerTerminalListing } from './worker-terminal/worker-terminal-l
 import { attachWorkerTerminalRelease } from './worker-terminal/worker-terminal-release'
 import { attachWorkerTerminalResourceStore } from './worker-terminal/worker-terminal-resource-store'
 import { attachWorkerTerminalTransfer } from './worker-terminal/worker-terminal-transfer'
+import { attachFileClaimStore } from './file-claims/file-claim-store'
+import { attachDecisionRegister } from './decisions/decision-register'
 
 export function attachOrchestrationDbMethods(ctor: { prototype: object }): void {
   attachAttemptObservationStore(ctor)
@@ -90,6 +93,7 @@ export function attachOrchestrationDbMethods(ctor: { prototype: object }): void 
   attachRunCreate(ctor)
   attachRunBinding(ctor)
   attachRunLookup(ctor)
+  attachRunWorkMode(ctor)
   attachRunCoordinatorMailRouting(ctor)
   attachLegacyCoordinatorMailTakeover(ctor)
   attachRunDelivery(ctor)
@@ -136,4 +140,6 @@ export function attachOrchestrationDbMethods(ctor: { prototype: object }): void 
   attachDecisionGateStore(ctor)
   attachCoordinatorRunStore(ctor)
   attachOrchestrationReset(ctor)
+  attachFileClaimStore(ctor)
+  attachDecisionRegister(ctor)
 }

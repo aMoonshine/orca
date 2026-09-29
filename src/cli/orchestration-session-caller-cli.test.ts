@@ -189,7 +189,8 @@ const EVERY_REQUIRED_FLAG = {
   to: 'term_worker',
   status: 'completed',
   preamble: true,
-  request: 'req_1'
+  request: 'req_1',
+  mode: 'swarm'
 } as const
 
 function flagMap(flags: Record<string, string | true>): Map<string, string | boolean> {
@@ -425,7 +426,7 @@ describe('the identity a session presents', () => {
     await invoke('ask', flagMap({ to: 'term_worker', question: 'q' }), false)
 
     const advice = errors.mock.calls.map(([line]) => String(line)).join('\n')
-    expect(advice).toContain('--resume msg_1')
+    expect(advice).toContain(process.platform === 'win32' ? '"--resume" "msg_1"' : '--resume msg_1')
     expect(advice).not.toContain('--from')
   })
 })
@@ -621,6 +622,9 @@ describe('every orchestration verb, enumerated', () => {
       'reply',
       'run-create',
       'run-current',
+      'run-mode',
+      'run-mode-set',
+      'run-phase-advance',
       'run-use',
       'send',
       'task-create',

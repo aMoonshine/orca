@@ -7,11 +7,13 @@ export const ORCHESTRATION_COMMAND_SPECS: CommandSpec[] = [
     path: ['orchestration', 'run-create'],
     summary: 'Create and bind a lightweight orchestration Run',
     usage:
-      'orca orchestration run-create --objective <text> [--from <handle>] [--retry-request <id>] [--json]',
-    allowedFlags: [...GLOBAL_FLAGS, 'objective', 'from', 'retry-request'],
+      'orca orchestration run-create --objective <text> [--mode <solo|fusion|orchestrator|swarm>] [--from <handle>] [--retry-request <id>] [--json]',
+    allowedFlags: [...GLOBAL_FLAGS, 'objective', 'mode', 'from', 'retry-request'],
     identityFlagRoles: { from: 'caller' },
     notes: [
       'A Run is a namespace and home inbox. It never schedules or places workers.',
+      '--mode sets how the workers in this Run relate to each other, not how many there are. Choose it once here; a launch-many control then fans workers into whichever mode this Run is in. swarm is equal peers sharing one directory on one branch (the spec suggests 2-4, but nothing caps the count); fusion is independent read-only panels, then a judge, then one write-only integrator; orchestrator is a planner, then workers in separate worktrees, then an integrator; solo is one agent.',
+      'The mode has phases, and the phase is enforced rather than suggested. A read-only phase (swarm coordination, the fusion panel and judge, orchestrator planning) refuses every file claim, so no worker can take a path until the coordinator advances the Run.',
       '--retry-request is only for exact recovery after an unknown mutation result.'
     ]
   },
@@ -44,6 +46,37 @@ export const ORCHESTRATION_COMMAND_SPECS: CommandSpec[] = [
     summary: 'Show one lightweight orchestration Run',
     usage: 'orca orchestration run-show --id <run_id> [--json]',
     allowedFlags: [...GLOBAL_FLAGS, 'id']
+  },
+  {
+    path: ['orchestration', 'run-mode'],
+    summary: 'Show the work mode, current phase and phase history of a Run',
+    usage: 'orca orchestration run-mode [--id <run_id>] [--from <handle>] [--json]',
+    allowedFlags: [...GLOBAL_FLAGS, 'id', 'from'],
+    identityFlagRoles: { from: 'caller' }
+  },
+  {
+    path: ['orchestration', 'run-mode-set'],
+    summary: 'Switch a Run to another work mode, starting at that mode first phase',
+    usage:
+      'orca orchestration run-mode-set --mode <solo|fusion|orchestrator|swarm> [--id <run_id>] [--from <handle>] [--retry-request <id>] [--json]',
+    allowedFlags: [...GLOBAL_FLAGS, 'mode', 'id', 'from', 'retry-request'],
+    identityFlagRoles: { from: 'caller' },
+    notes: [
+      'Switching a mode re-enters its first phase, so a swarm Run returns to read-only coordination. A coordinator switching a Run out of a read-only phase releases the hold on every worker path at once; the runtime does not need each worker to be told.',
+      'This changes how the group works, not how many agents are in it. Use it once per Run; the peer count is whatever workers you start.'
+    ]
+  },
+  {
+    path: ['orchestration', 'run-phase-advance'],
+    summary: 'Advance the Run to its next phase and release the file-claim hold',
+    usage:
+      'orca orchestration run-phase-advance [--id <run_id>] [--from <handle>] [--retry-request <id>] [--json]',
+    allowedFlags: [...GLOBAL_FLAGS, 'id', 'from', 'retry-request'],
+    identityFlagRoles: { from: 'caller' },
+    notes: [
+      'Advancing past a read-only phase is what lets workers claim files, so run it when the phase is actually done rather than to unblock a worker that is waiting.',
+      'A bounded phase (swarm catch-up) advances within its round budget and then reports phase_round_exhausted instead of looping.'
+    ]
   },
   {
     path: ['orchestration', 'send'],

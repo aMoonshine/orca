@@ -272,6 +272,13 @@ export function settleWorkerReportInTransaction(
   for (const sibling of siblingDispatchIds) {
     this.closeQuestionsForDispatch(sibling.id)
   }
+  // Beside question closure for the same reason: a claim, like a question, outlives the
+  // worker that made it only as long as that worker is live. Holding it past settlement
+  // would block a follow-up worker from the same directory for no reason.
+  this.releaseFileClaimsForDispatch(params.dispatchId)
+  for (const sibling of siblingDispatchIds) {
+    this.releaseFileClaimsForDispatch(sibling.id)
+  }
   if (params.outcome === 'succeeded') {
     this.promoteReadyTasks(params.taskId)
   }

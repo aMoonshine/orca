@@ -3,6 +3,8 @@ import type { OrchestrationDb } from '../../../../orchestration/db'
 import type { RunRow, TaskRow } from '../../../../orchestration/types'
 import type { WorkerStartModeReceipt } from '../../orchestration-worker-start-mode'
 import { deliverWorkerDispatchPreamble } from './deliver-worker-dispatch-preamble'
+import type { RunWorkMode } from '../../../../orchestration/db/runs/run-work-mode'
+import type { WorkerFileClaimOutcome } from './worker-start-file-claims'
 import type { OrchestrationWorkerLaunchReceipt } from './worker-launch-preferences'
 import {
   describeUnobservedWorkerTurnStart,
@@ -40,6 +42,8 @@ export async function deliverAndSettleWorkerStartReadiness(args: {
   mode: WorkerStartModeReceipt
   timeoutMs: number
   effects: WorkerEffect[]
+  fileClaims?: WorkerFileClaimOutcome
+  workMode?: RunWorkMode
   terminalRevealWarning: string | undefined
   /** Keeps the caller's failure receipt naming the stage that actually failed. */
   onStage: (stage: 'dispatch_input' | 'turn_observation') => void
@@ -58,7 +62,9 @@ export async function deliverAndSettleWorkerStartReadiness(args: {
     coordinatorHandle: args.coordinatorHandle,
     dispatchCapability: args.dispatchCapability,
     devMode: args.devMode,
-    requestId: args.requestId
+    requestId: args.requestId,
+    fileClaims: args.fileClaims,
+    workMode: args.workMode
   })
   effects.push({
     kind: 'dispatch_input',

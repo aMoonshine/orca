@@ -386,6 +386,9 @@ import {
   RunCreateParams,
   RunCurrentParams,
   RunListParams,
+  RunModeParams,
+  RunModeSetParams,
+  RunPhaseAdvanceParams,
   RunShowParams,
   RunUseParams
 } from './orchestration-runs-params'
@@ -1004,6 +1007,9 @@ export const RPC_PARAMS_BY_METHOD = {
   'orchestration.runCreate': RunCreateParams,
   'orchestration.runCurrent': RunCurrentParams,
   'orchestration.runList': RunListParams,
+  'orchestration.runMode': RunModeParams,
+  'orchestration.runModeSet': RunModeSetParams,
+  'orchestration.runPhaseAdvance': RunPhaseAdvanceParams,
   'orchestration.runShow': RunShowParams,
   'orchestration.runStop': RunStopParams,
   'orchestration.runUse': RunUseParams,

@@ -29,6 +29,10 @@ import { tearDownFailedWorkerStart } from './failed-worker-start-teardown'
 import { requireWorkerAuthority, type WorkerEffect } from './worker-topology'
 import { prepareLocalWorkerStart } from './worker-start-validation'
 import { deliverAndSettleWorkerStartReadiness } from './worker-start-readiness-settlement'
+import { claimWorkerStartFiles, type WorkerFileClaimOutcome } from './worker-start-file-claims'
+
+/** Why a shared constant: the no-claims case is the common single-worker dispatch. */
+const EMPTY_FILE_CLAIMS: WorkerFileClaimOutcome = { claims: [], ownedByOthers: [] }
 
 type WorkerStartMutation = {
   callerFingerprint: string
@@ -128,6 +132,32 @@ export async function startLocalWorker(args: {
   })
   const effects: WorkerEffect[] = []
   const task = started.task
+  // Why before placement: a worker refused for claiming a peer's file must fail with
+  // no terminal created, no agent launched, and no prompt sent. The dispatch row already
+  // exists, so the teardown below reclaims it the same way as any other early failure.
+  let fileClaims: WorkerFileClaimOutcome = EMPTY_FILE_CLAIMS
+  try {
+    fileClaims = claimWorkerStartFiles({
+      db,
+      runId: run.id,
+      dispatchId: started.dispatch.id,
+      workspaceId: resolvedWorktree?.id ?? '',
+      workspacePath: resolvedWorktree?.path ?? '',
+      claims: params.claims
+    })
+  } catch (error) {
+    return failWorkerStartWithReceipt({
+      db,
+      runId: run.id,
+      taskId: task.id,
+      dispatchId: started.dispatch.id,
+      failedStage: 'file_claim',
+      error,
+      setup: EXISTING_WORKTREE_SETUP,
+      launch: launch.receipt,
+      mode
+    })
+  }
   if (resolvedWorktree) {
     effects.push(
       { kind: 'worktree', action: 'reused', id: resolvedWorktree.id },
@@ -244,6 +274,8 @@ export async function startLocalWorker(args: {
       mode,
       timeoutMs: params.timeoutMs ?? 60_000,
       effects,
+      fileClaims,
+      workMode: db.getRunWorkMode(run.id),
       terminalRevealWarning: placed.warning,
       onStage: (stage) => {
         failedStage = stage

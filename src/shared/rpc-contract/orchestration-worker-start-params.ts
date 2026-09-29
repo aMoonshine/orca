@@ -31,7 +31,13 @@ export const WorkerStartParams = z
     effort: OptionalWorkerLaunchPreference,
     retryOf: OptionalString,
     timeoutMs: OptionalFiniteNumber,
-    devMode: z.boolean().optional()
+    devMode: z.boolean().optional(),
+    // Paths this worker owns exclusively in the target workspace. Recorded before the
+    // agent starts, so a second worker dispatched onto the same file is refused at
+    // worker-start rather than overwriting the first one's edits at some later moment.
+    // Comma-separated to match --deps, because a swarm worker usually owns a set of files
+    // and a repeated flag would not survive the CLI's flag parser.
+    claims: OptionalString
   })
   .superRefine((params, ctx) => {
     if (!params.task && !params.spec) {

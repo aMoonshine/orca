@@ -35,6 +35,27 @@ export type PreambleParams = {
   workerKind?: 'prompt-returning-agent' | 'bare-shell'
   // Why gated: advertising a verb the depth cap will reject just burns a turn.
   canDispatchSubWorkers?: boolean
+  /**
+   * Why optional: a worker that claimed no path is the single-agent case, and the
+   * section must not appear at all then — a rule about shared files would be noise
+   * for a worker with no peers in its workspace.
+   */
+  fileClaims?: {
+    owned: readonly { display_path: string }[]
+    ownedByOthers: readonly { display_path: string; dispatch_id: string }[]
+  }
+  /**
+   * The Run's work mode and phase. Why it is here and not only in the coordinator: a
+   * worker that does not know the phase cannot obey it, and "do not edit any file" is
+   * unenforceable unless the agent is told which phase it is standing in.
+   */
+  workMode?: {
+    modeLabel: string
+    phaseLabel: string
+    phaseInstruction: string
+    round: number
+    isFinalPhase: boolean
+  }
 }
 
 // Why: 5 minutes is frequent enough that the coordinator's stale-heartbeat
@@ -139,7 +160,11 @@ ${postDoneInstructions}`
 
   const subDispatch = params.canDispatchSubWorkers ? buildSubDispatchSection(cli) : ''
 
-  return `${header}${drift}${subDispatch}
+  const fileClaims = buildFileClaimsSection(params.fileClaims)
+
+  const workMode = buildWorkModeSection(params.workMode)
+
+  return `${header}${workMode}${fileClaims}${drift}${subDispatch}
 
 === TASK ===
 ${params.taskSpec}`
@@ -226,6 +251,65 @@ until they have settled. Nesting is capped, so a sub-worker of yours may not be
 able to dispatch further.
 
 ---`
+}
+
+/**
+ * Why the section names concrete files instead of stating a rule: a worker told
+ * "do not edit files owned by others" has to guess which those are, and guessing
+ * wrong silently overwrites a peer. The dispatch already refused any overlap, so the
+ * only job here is to make the boundary legible before the agent starts.
+ *
+ * Omitted entirely when this worker holds nothing and nobody else does — the shared
+ * single-worker case, where the section would be pure noise.
+ */
+function buildFileClaimsSection(claims: PreambleParams['fileClaims']): string {
+  const owned = claims?.owned ?? []
+  const ownedByOthers = claims?.ownedByOthers ?? []
+  if (owned.length === 0 && ownedByOthers.length === 0) {
+    return ''
+  }
+  const ownedList = owned.map((row) => `  - ${row.display_path}`).join('\n')
+  const othersList = ownedByOthers
+    .map((row) => `  - ${row.display_path} (dispatch ${row.dispatch_id})`)
+    .join('\n')
+  return `
+
+=== FILE OWNERSHIP ===
+You are working in a directory other workers share and edit concurrently. These paths
+are yours alone for the life of this task:${owned.length > 0 ? `\n${ownedList}` : '\n  (none)'}
+
+Do NOT edit a path another worker owns, even to fix an obvious mistake. Ask the
+coordinator with \`ask\` instead — they can re-split the task or transfer ownership.
+Your claim is released when you send \`worker_done\`, so leave unrelated files alone
+rather than tidying them.
+${
+  ownedByOthers.length > 0
+    ? `\nOwned by other workers in this workspace — treat as read-only:\n${othersList}\n`
+    : ''
+}
+---`
+}
+
+/**
+ * Why the mode section is unconditional for a non-solo mode and omitted for solo: a
+ * solo worker has no protocol to follow, so naming one would be noise, while a swarm
+ * peer that does not see this has no way to know its phase forbids editing.
+ */
+function buildWorkModeSection(mode: PreambleParams['workMode']): string {
+  if (!mode) {
+    return ''
+  }
+  const rounds =
+    mode.round > 1
+      ? ` (round ${mode.round} — re-read the decisions before changing anything again)`
+      : ''
+  return `
+
+=== WORK MODE: ${mode.modeLabel} / ${mode.phaseLabel} ===
+${mode.phaseInstruction}${rounds}
+${mode.isFinalPhase ? 'This is the last phase of the protocol: finish and report, do not start new work.\n' : ''}
+The coordinator advances the phase. Do not move yourself into a later phase, and do not
+edit files in a read-only phase — a claim there is refused by the runtime, not by you.`
 }
 
 function buildDriftSection(drift: NonNullable<PreambleParams['baseDrift']>): string {

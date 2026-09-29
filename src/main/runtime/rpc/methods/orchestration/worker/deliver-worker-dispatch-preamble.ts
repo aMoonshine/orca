@@ -1,11 +1,14 @@
 import type { RuntimeTerminalSend } from '../../../../../../shared/runtime-terminal-contracts'
+import { MODE_PROTOCOLS } from '../../../../../../shared/swarm/mode-protocols'
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
+import type { RunWorkMode } from '../../../../orchestration/db/runs/run-work-mode'
 import {
   buildDispatchPreamble,
   dispatchPreambleSendOptions
 } from '../../../../orchestration/preamble'
 import { sendStructuredWorkerPreamble } from '../../orchestration-structured-worker-session'
 import type { WorkerTurnStartObservation } from './worker-start-turn-observation'
+import type { WorkerFileClaimOutcome } from './worker-start-file-claims'
 import type { createStructuredWorkerSessionForWorktree } from './worker-topology'
 
 type StructuredSession = Awaited<ReturnType<typeof createStructuredWorkerSessionForWorktree>> | null
@@ -30,6 +33,8 @@ export async function deliverWorkerDispatchPreamble(args: {
   dispatchCapability: string
   devMode: boolean | undefined
   requestId: string
+  fileClaims?: WorkerFileClaimOutcome
+  workMode?: RunWorkMode
 }): Promise<{
   prompt?: RuntimeTerminalSend['prompt']
   structuredTurnStart?: WorkerTurnStartObservation
@@ -47,7 +52,22 @@ export async function deliverWorkerDispatchPreamble(args: {
     workerHandle: terminalHandle,
     dispatchCapability: args.dispatchCapability,
     devMode: args.devMode,
-    cliCommand: runtime.getTerminalOrchestrationCliCommand(terminalHandle)
+    cliCommand: runtime.getTerminalOrchestrationCliCommand(terminalHandle),
+    fileClaims: args.fileClaims
+      ? {
+          owned: args.fileClaims.claims,
+          ownedByOthers: args.fileClaims.ownedByOthers
+        }
+      : undefined,
+    workMode: args.workMode
+      ? {
+          modeLabel: MODE_PROTOCOLS[args.workMode.mode].label,
+          phaseLabel: args.workMode.definition.label,
+          phaseInstruction: args.workMode.definition.instruction,
+          round: args.workMode.round,
+          isFinalPhase: args.workMode.isFinalPhase
+        }
+      : undefined
   })
   if (structuredSession) {
     const delivery = await sendStructuredWorkerPreamble({

@@ -42,14 +42,15 @@ export const ORCHESTRATION_RUN_METHODS = [
         objective: params.objective,
         coordinatorHandle: caller.terminalHandle,
         coordinatorPaneKey: caller.paneKey,
-        coordinatorOrcaSessionId: caller.orcaSessionId
+        coordinatorOrcaSessionId: caller.orcaSessionId,
+        mode: params.mode
       })
       runtime.cancelMessageWaiters(params.from)
       cancelBoundDispatchWaiters(runtime, caller, run.id)
       if (priorRun) {
         runtime.cancelMessageWaiters(`run:${priorRun.id}`)
       }
-      return { run: exposeRun(run) }
+      return { run: exposeRun(run), workMode: db.getRunWorkMode(run.id) }
     }
   }),
   defineMethod({

@@ -17,6 +17,9 @@ export const RUN_COLUMNS = [
   'coordinator_orca_session_id_generation',
   'consumer_generation',
   'legacy',
+  'mode',
+  'mode_phase',
+  'mode_phase_round',
   'created_at',
   'updated_at'
 ] as const satisfies readonly (keyof RunRow)[]

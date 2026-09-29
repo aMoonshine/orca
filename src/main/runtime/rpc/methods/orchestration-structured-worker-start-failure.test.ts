@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setStructuredAgentSessionHost } from '../../../native-chat/agent-session-wire/structured-agent-session-registry'
 import type { OrcaRuntimeService } from '../../orca-runtime'
 import type { OrchestrationDb } from '../../orchestration/db'
+import { MODE_PROTOCOLS } from '../../../../shared/swarm/mode-protocols'
 import { structuredWorkerIdentities } from '../../structured-worker-identity'
 
 vi.mock('./structured-agent-session-create', () => ({
@@ -104,13 +105,21 @@ function fakes() {
     getTerminalPaneKey: vi.fn(() => 'pane_1'),
     retireStructuredAgentSessionTabFromSnapshot
   } as unknown as OrcaRuntimeService
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: a partial OrchestrationDb fake, same shape as the runtime fake above; this test is about teardown after a failed start, not about the rest of the store.
   const db = {
     createStartingWorkerDispatch: () => ({
       dispatch: { id: 'd_fail', depth: 0 },
       task: { id: 't1', spec: 'do the thing' }
     }),
     recordWorkerStage: () => {},
-    prepareStartingWorkerAuthority: () => 'capability'
+    prepareStartingWorkerAuthority: () => 'capability',
+    getRunWorkMode: () => ({
+      mode: 'solo' as const,
+      phaseId: 'work',
+      round: 1,
+      definition: MODE_PROTOCOLS.solo.phases[0],
+      isFinalPhase: true
+    })
   } as unknown as OrchestrationDb
   return { runtime, db, retireStructuredAgentSessionTabFromSnapshot }
 }

@@ -53,6 +53,10 @@ export type RunRow = {
   coordinator_orca_session_id_generation: number | null
   consumer_generation: number
   legacy: number
+  /** How this group of workers relates to each other; see shared/swarm/mode-protocols. */
+  mode: string
+  mode_phase: string
+  mode_phase_round: number
   created_at: string
   updated_at: string
 }

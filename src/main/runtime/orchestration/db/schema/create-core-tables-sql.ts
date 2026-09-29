@@ -16,6 +16,18 @@ CREATE TABLE IF NOT EXISTS runs (
   coordinator_orca_session_id_generation INTEGER,
   consumer_generation   INTEGER NOT NULL DEFAULT 0,
   legacy                INTEGER NOT NULL DEFAULT 0,
+  -- How this group of agents relates to each other, and where it is in that protocol.
+  -- Mode lives on the Run, not the agent: it describes the relationship between
+  -- workers, so a Run of six swarm agents is in swarm mode and each worker inherits
+  -- it. That is what lets a launch-many control and a mode compose without either
+  -- having to arbitrate against the other.
+  mode                  TEXT NOT NULL DEFAULT 'solo'
+    CHECK(mode IN ('solo', 'fusion', 'orchestrator', 'swarm')),
+  mode_phase            TEXT NOT NULL DEFAULT 'work',
+  -- Round counter for the current phase; the spec's bounded catch-up. Reset on every
+  -- phase change so a mode with several repeat-capable phases does not spend the
+  -- budget of the first one.
+  mode_phase_round      INTEGER NOT NULL DEFAULT 1,
   created_at            TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -220,6 +232,89 @@ CREATE TABLE IF NOT EXISTS worker_terminal_archives (
   content       TEXT NOT NULL,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Per-path edit ownership inside one workspace, so workers sharing a directory
+-- cannot silently overwrite each other. Scoped to (run_id, workspace_id): a new Run
+-- starts with a clean slate, and the same path in two workspaces is not a conflict.
+-- One owner per key - a second claim on a held key is refused, not queued.
+CREATE TABLE IF NOT EXISTS worker_file_claims (
+  run_id        TEXT NOT NULL,
+  workspace_id  TEXT NOT NULL,
+  claim_key     TEXT NOT NULL,
+  display_path  TEXT NOT NULL,
+  dispatch_id   TEXT NOT NULL,
+  claimed_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (run_id, workspace_id, claim_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_worker_file_claims_dispatch
+  ON worker_file_claims(dispatch_id);
+CREATE INDEX IF NOT EXISTS idx_worker_file_claims_scope
+  ON worker_file_claims(run_id, workspace_id);
+
+-- Standing contracts published by the peers working one task, per the multi-agent
+-- mode spec: a signature, interface or schema an agent fixed on behalf of everyone.
+-- A table rather than a message because a contract is re-read for the life of the Run,
+-- not consumed once from a mailbox, and an integrator is meant to read exactly this
+-- list without also reading the chatter that produced it. 'frozen' is the state that
+-- makes it binding; an open decision is still negotiable.
+CREATE TABLE IF NOT EXISTS run_decisions (
+  id                TEXT PRIMARY KEY,
+  run_id            TEXT NOT NULL,
+  proposed_by       TEXT NOT NULL,
+  title             TEXT NOT NULL,
+  contract          TEXT NOT NULL,
+  rationale         TEXT NOT NULL DEFAULT '',
+  -- Workspace-relative paths the contract governs, so a peer knows which files it
+  -- must read before editing. Informational: it does not grant a worker_file_claims
+  -- claim, which stays a separate and deliberate act.
+  affects           TEXT NOT NULL DEFAULT '[]',
+  -- The frozen decision this one replaces, so a contract can change without
+  -- rewriting history the peers already built against.
+  supersedes        TEXT,
+  status            TEXT NOT NULL DEFAULT 'open'
+    CHECK(status IN ('open', 'frozen', 'withdrawn')),
+  frozen_at         TEXT,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_run_decisions_run
+  ON run_decisions(run_id, status);
+CREATE INDEX IF NOT EXISTS idx_run_decisions_supersedes
+  ON run_decisions(supersedes) WHERE supersedes IS NOT NULL;
+
+-- One response per peer per decision. The spec forbids empty acknowledgements, so a
+-- response always carries either an objection or a reason worth reading.
+CREATE TABLE IF NOT EXISTS decision_responses (
+  decision_id       TEXT NOT NULL,
+  dispatch_id       TEXT NOT NULL,
+  stance            TEXT NOT NULL CHECK(stance IN ('accepted', 'objected')),
+  note              TEXT NOT NULL DEFAULT '',
+  created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (decision_id, dispatch_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_decision_responses_objected
+  ON decision_responses(decision_id) WHERE stance = 'objected';
+
+-- Phase history, so a coordinator can see how a Run got to where it is and a late
+-- joiner can be told what already happened. Append-only by design: a phase that was
+-- entered and left is a fact, not something to rewrite when the protocol changes.
+CREATE TABLE IF NOT EXISTS run_phase_events (
+  id                TEXT PRIMARY KEY,
+  run_id            TEXT NOT NULL,
+  mode              TEXT NOT NULL,
+  phase             TEXT NOT NULL,
+  phase_round       INTEGER NOT NULL,
+  entered_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  advanced_by       TEXT,
+  note              TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_run_phase_events_run
+  ON run_phase_events(run_id, entered_at);
 
   `
 }

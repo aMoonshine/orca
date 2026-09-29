@@ -14,6 +14,9 @@ const RUN_ROW: RunRow = {
   coordinator_orca_session_id_generation: 3,
   consumer_generation: 3,
   legacy: 0,
+  mode: 'swarm',
+  mode_phase: 'coordination',
+  mode_phase_round: 1,
   created_at: '2026-09-04T18:53:07Z',
   updated_at: '2026-09-04T18:53:09Z'
 }
@@ -28,6 +31,9 @@ describe('exposeRun', () => {
       'created_at',
       'id',
       'legacy',
+      'mode',
+      'mode_phase',
+      'mode_phase_round',
       'objective',
       'updated_at'
     ])
@@ -46,6 +52,9 @@ describe('exposeRun', () => {
       coordinator_handle: 'term_coord',
       consumer_generation: 3,
       legacy: 0,
+      mode: 'swarm',
+      mode_phase: 'coordination',
+      mode_phase_round: 1,
       created_at: '2026-09-04T18:53:07Z',
       updated_at: '2026-09-04T18:53:09Z'
     })
