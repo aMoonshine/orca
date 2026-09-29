@@ -1,0 +1,3 @@
+vendor/** -text
+catalog.generated.json text eol=lf
+source.json text eol=lf
