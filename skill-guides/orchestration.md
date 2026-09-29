@@ -148,6 +148,23 @@ an operator-created process unsupervised and is only for an expressiveness gap.
 
 ## Task-spec contract
 
+### Run work modes and file claims
+
+`run-create --mode solo|swarm|fusion|orchestrator` stores the group protocol on the
+Run. Inspect it with `run-mode`; the coordinator can use `run-phase-advance` to
+enter the next phase. Workers must not advance their own phase. Phases do not
+advance automatically.
+
+In writable phases, pass `worker-start --claims "src/parser,src/parser.test.ts"`.
+Claims are scoped to the Run and workspace and reject overlaps with other live
+dispatches before a terminal opens. Read-only phases reject claims. The injected
+preamble names owned paths and read-only peer paths; agents must follow these
+instructions because claims do not sandbox filesystem writes.
+
+The desktop's **Launch agents** dialog exposes these modes, waves of up to six,
+phase advancement, task reports, and question replies. Its user acts as the
+coordinator. See `docs/reference/agent-groups.md` for recovery and persistence.
+
 Every Task spec must be self-contained and name:
 
 - **Target:** the files, component, or environment in scope.
