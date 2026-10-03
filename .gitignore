@@ -203,4 +203,8 @@ ci-shards/
 
 # Portable Windows development runtime, fetched by tools/orca-dev.cmd.
 /tools/runtime/
+# Local development output and isolated Windows validation profiles.
+/artifacts/
+/Microsoft/
+/tools/ui-validation*/
 !docs/reference/agent-groups.md
