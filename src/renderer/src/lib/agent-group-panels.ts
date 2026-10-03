@@ -1,13 +1,25 @@
 import { z } from 'zod'
 import { useAppStore } from '@/store'
 import type { GroupReceipt, GroupRpc } from './agent-group-launch'
+import { chooseAgentPanelSplit } from './agent-panel-placement'
 
 const terminalSchema = z.object({
   terminal: z.object({ tabId: z.string(), worktreeId: z.string() })
 })
 
 /** Move existing worker tabs, preserving their PTYs and every unrelated tab. */
-export async function showAgentGroupPanels(rpc: GroupRpc, receipts: GroupReceipt[]): Promise<void> {
+export async function showAgentGroupPanels(
+  rpc: GroupRpc,
+  receipts: GroupReceipt[],
+  preserveActiveTab = false
+): Promise<number> {
+  const initial = useAppStore.getState()
+  const activeWorktree = initial.activeWorktreeId
+  const initialGroup = activeWorktree ? initial.activeGroupIdByWorktree[activeWorktree] : undefined
+  const initialTab = activeWorktree
+    ? initial.groupsByWorktree[activeWorktree]?.find((group) => group.id === initialGroup)
+        ?.activeTabId
+    : undefined
   const tabs: { worktreeId: string; tabId: string }[] = []
   for (const receipt of receipts) {
     const terminal = receipt.effects?.find(
@@ -30,7 +42,7 @@ export async function showAgentGroupPanels(rpc: GroupRpc, receipts: GroupReceipt
     const tab = visibleTabs.find(
       (entry) => entry.contentType === 'terminal' && entry.entityId === tabId
     )
-    if (!tab) {
+    if (!tab || arranged.includes(tab.id)) {
       continue
     }
     const prior = arranged
@@ -38,13 +50,25 @@ export async function showAgentGroupPanels(rpc: GroupRpc, receipts: GroupReceipt
       .filter((entry) => entry !== undefined)
     const shared = prior.some((entry) => entry.groupId === tab.groupId)
     if (shared) {
-      const anchor = prior.length === 1 ? prior[0] : prior[(prior.length - 2) % 2]
-      state.dropUnifiedTab(tab.id, {
-        groupId: anchor.groupId,
-        splitDirection: prior.length === 1 ? 'right' : 'down'
-      })
+      state.dropUnifiedTab(
+        tab.id,
+        chooseAgentPanelSplit(
+          state.layoutByWorktree[worktreeId],
+          prior.map((entry) => entry.groupId)
+        )
+      )
     }
     useAppStore.getState().activateTab(tab.id, { worktreeId })
     arranged.push(tab.id)
   }
+  if (
+    preserveActiveTab &&
+    activeWorktree &&
+    initialTab &&
+    arranged.includes(initialTab) &&
+    useAppStore.getState().activeWorktreeId === activeWorktree
+  ) {
+    useAppStore.getState().activateTab(initialTab, { worktreeId: activeWorktree })
+  }
+  return arranged.length
 }

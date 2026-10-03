@@ -23,7 +23,13 @@ export type GroupReceipt = {
   failedStage?: string
   effects?: { kind: string; role?: string; id?: string }[]
 }
-export type GroupTask = { id: string; status: string; spec: string; result: string | null }
+export type GroupTask = {
+  id: string
+  status: string
+  spec: string
+  result: string | null
+  task_title?: string | null
+}
 export type GroupSnapshot = {
   run: GroupRun | null
   receipts: GroupReceipt[]

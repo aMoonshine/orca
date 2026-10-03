@@ -36,7 +36,10 @@ export function getAgentGroupController(
     },
     run,
     (receipts) =>
-      showAgentGroupPanels((method, params) => callRuntimeRpc(target, method, params), receipts)
+      showAgentGroupPanels(
+        (method, params) => callRuntimeRpc(target, method, params),
+        receipts
+      ).then(() => {})
   )
   controllers.set(key, controller)
   return controller

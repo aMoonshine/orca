@@ -877,6 +877,22 @@ describe('launchAgentInNewTab', () => {
     expect(mockToastMessage).not.toHaveBeenCalled()
   })
 
+  it('applies the explicit master model instead of default CLI model arguments', async () => {
+    const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
+    store.settings.agentDefaultArgs = { opencode: '--model provider/old' }
+    launchAgentInNewTab({
+      agent: 'opencode',
+      worktreeId: 'wt-1',
+      terminalOnly: true,
+      sessionOptions: { model: 'provider/chosen' }
+    })
+    expect(mockQueueTabStartupCommand).toHaveBeenCalledWith(
+      'tab-1',
+      expect.objectContaining({ command: expect.stringContaining('provider/chosen') })
+    )
+    expect(mockQueueTabStartupCommand.mock.calls[0][1].command).not.toContain('provider/old')
+  })
+
   it('queues per-launch CLI arguments without putting generated prompts in argv', async () => {
     const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
 

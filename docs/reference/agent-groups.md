@@ -1,6 +1,45 @@
 # Launching agent groups
 
-Open a workspace and choose **Launch agents** (the people icon next to the tab-bar
+## Master chat
+
+**Launch agents** now opens **Master chat** by default. Enter one goal, select the
+master CLI/model and worker CLI/model, then choose up to 20 workers and **Start team**.
+The master is a real CLI conversation in the selected workspace. It checks the
+target, creates orchestration Tasks, dispatches workers with the exact model,
+handles questions and reviews results. Task decomposition and supervision are
+agent-driven; the count is an instruction to the master, not an OS resource quota.
+You can change the requested team and give follow-up instructions in that panel.
+
+The launcher waits for host-side CLI readiness before sending the bootstrap. It
+saves the master identity before delivery and refuses duplicate starts after an
+unknown outcome. **Open master chat** returns to that session. **Detach saved team**
+removes only the shortcut; it does not stop or reassign existing agents.
+
+Workers appear automatically beside the master in separate resizable panels.
+Each new panel splits the largest existing team panel. The existing split-tree,
+dragging and terminal sessions are reused. The master retains settled workers so
+you can give them new instructions directly. Switching projects keeps their work
+running; automatic arrangement follows the currently visible workspace.
+
+The existing workspace kanban has an **Active team tasks** view. It projects the
+current master's real Task rows into To do, In progress, Reported and Needs attention.
+Reported means a worker report exists; read the master's verification before
+accepting the result. The board and group messages refresh every five seconds
+while mounted. Host-reported requests for guidance, input and other attention move
+active tasks into Needs attention; questions remain in Group messages and the
+master's inbox until handled. The UI does not infer failure from a missing host.
+
+Local and SSH terminal launches reuse Orca's existing launch routing. A paired
+browser/host-published master launch is currently refused before opening a surface;
+it never falls back to the local machine. Real Windows validation used OpenCode
+1.18.34 and `opencode/space-bunny-free`; other providers still need their own login.
+
+React Grab's development picker is now opt-in: set `VITE_ENABLE_REACT_GRAB=true`
+before starting the development app to restore it.
+
+## Manual launch
+
+Open a workspace and choose **Launch agents → Manual launch** (the people icon next to the tab-bar
 plus button). Choose Solo, Swarm, Fusion, or Orchestrator, enter a group goal, and
 give each agent a task. The picker uses enabled agents detected on that workspace's
 host. A wave can contain up to six agents; Solo, Planning, Judge, and Integration
@@ -63,8 +102,8 @@ group. If its binding is gone, the UI reports the problem instead of taking over
 another Run. **New group** starts a fresh form context; it does not stop previous
 agents. Existing terminal/CLI recovery and release commands remain available.
 
-Worker terminals appear in split panels automatically. Two agents occupy adjacent
-panels; additional workers split those columns into rows. Existing terminal sessions
+Worker terminals appear in split panels automatically. Additional workers split
+the largest existing group panel. Existing terminal sessions
 are moved, not restarted. Resize the dividers or drag panels to change the layout.
 The launch dialog closes after a successful wave. Reopen **Launch agents** to read
 tasks, group messages, and advance the phase. Failed starts keep the dialog open,

@@ -43,7 +43,22 @@ export function AgentGroupInbox({ run, target }: { run: GroupRun; target: Runtim
     }
   }, [run.id, run.from, target])
   useEffect(() => {
-    void refresh()
+    let stopped = false
+    let refreshing = false
+    const poll = async () => {
+      if (stopped || refreshing) {
+        return
+      }
+      refreshing = true
+      await refresh()
+      refreshing = false
+    }
+    void poll()
+    const timer = setInterval(() => void poll(), 5000)
+    return () => {
+      stopped = true
+      clearInterval(timer)
+    }
   }, [refresh])
   async function send() {
     if (!selected || !reply.trim() || busy) {

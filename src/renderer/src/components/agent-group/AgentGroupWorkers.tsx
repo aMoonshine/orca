@@ -22,6 +22,7 @@ export function AgentGroupWorkers({
   options,
   writable,
   disabled,
+  showTasks = true,
   onChange
 }: {
   workers: GroupWorker[]
@@ -30,6 +31,7 @@ export function AgentGroupWorkers({
   options: TabAgentLaunchOption[]
   writable: boolean
   disabled: boolean
+  showTasks?: boolean
   onChange: (workers: GroupWorker[]) => void
 }) {
   return (
@@ -85,16 +87,20 @@ export function AgentGroupWorkers({
                 )
               }
             />
-            <Label htmlFor={id}>{translate('agentGroup.task', 'Task')}</Label>
-            <Textarea
-              id={id}
-              value={worker.spec}
-              onChange={(event) => change({ spec: event.target.value })}
-              placeholder={translate(
-                'agentGroup.taskPlaceholder',
-                'Scope, expected result, and how to verify it'
-              )}
-            />
+            {showTasks && (
+              <>
+                <Label htmlFor={id}>{translate('agentGroup.task', 'Task')}</Label>
+                <Textarea
+                  id={id}
+                  value={worker.spec}
+                  onChange={(event) => change({ spec: event.target.value })}
+                  placeholder={translate(
+                    'agentGroup.taskPlaceholder',
+                    'Scope, expected result, and how to verify it'
+                  )}
+                />
+              </>
+            )}
             {writable && (
               <>
                 <Label htmlFor={`${id}-claims`}>

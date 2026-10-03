@@ -20,6 +20,7 @@ import {
 import { TUI_AGENT_CONFIG } from '../../../shared/tui-agent-config'
 import { seedCommandCodeSubmittedPromptStatus } from '@/lib/command-code-prompt-status-seed'
 import type { TuiAgent } from '../../../shared/tui-agent'
+import type { SessionOptionValue } from '../../../shared/native-chat-session-options'
 import type { LaunchSource } from '../../../shared/telemetry-events'
 import { resolveAgentLaunchExecutionContext } from '@/lib/launch-agent-execution-context'
 import { resolveInitialNativeChatSessionOptions } from '@/components/native-chat/native-chat-launch-session-options'
@@ -33,6 +34,8 @@ import {
 } from '@/lib/agent-session-launch-plan'
 
 export type LaunchAgentInNewTabArgs = {
+  terminalOnly?: boolean
+  sessionOptions?: Record<string, SessionOptionValue>
   agent: TuiAgent
   worktreeId: string
   /** Tab group the user launched from; keeps split-group launches in that pane instead of the active group. */
@@ -145,7 +148,9 @@ function launchAgentInNewTabInternal(args: LaunchAgentInNewTabArgs): LaunchAgent
     nativeChatTranscriptIsLocalReadable:
       isNativeChatTranscriptLocalReadable(worktreeSshConnectionId)
   }
-  const initialViewModeProps = initialAgentTabViewModeProps(store.settings, initialViewModeOptions)
+  const initialViewModeProps = args.terminalOnly
+    ? { viewMode: 'terminal' as const }
+    : initialAgentTabViewModeProps(store.settings, initialViewModeOptions)
   const startupPlanBase = {
     agent,
     cmdOverrides,
@@ -154,7 +159,10 @@ function launchAgentInNewTabInternal(args: LaunchAgentInNewTabArgs): LaunchAgent
     isRemote,
     agentArgs: effectiveAgentArgs,
     agentEnv,
-    sessionOptions: resolveInitialNativeChatSessionOptions(store.settings, initialViewModeOptions)
+    sessionOptions:
+      args.sessionOptions ??
+      resolveInitialNativeChatSessionOptions(store.settings, initialViewModeOptions),
+    sessionOptionsOverrideAgentArgs: !!args.sessionOptions
   }
   const { startupPlan, pasteDraftAfterLaunch, submitPastedPrompt } = planLaunchAgentStartupPrompt({
     base: startupPlanBase,
@@ -211,7 +219,7 @@ function launchAgentInNewTabInternal(args: LaunchAgentInNewTabArgs): LaunchAgent
       initialSessionOptions: startupPlan.sessionOptions,
       onPromptDelivered
     })
-  if (plan?.route === 'structured-native-chat') {
+  if (!args.terminalOnly && plan?.route === 'structured-native-chat') {
     const structured = launchAgentInStructuredNewTab({
       plan,
       ...(beforeSurfaceOpen
