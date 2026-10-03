@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { callRuntimeRpc, type RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
 import { AgentGroupController, type GroupRun } from './agent-group-launch'
+import { showAgentGroupPanels } from './agent-group-panels'
 const controllers = new Map<string, AgentGroupController>()
 const savedRunSchema = z.object({
   id: z.string(),
@@ -33,7 +34,9 @@ export function getAgentGroupController(
         /* Runtime remains authoritative. */
       }
     },
-    run
+    run,
+    (receipts) =>
+      showAgentGroupPanels((method, params) => callRuntimeRpc(target, method, params), receipts)
   )
   controllers.set(key, controller)
   return controller

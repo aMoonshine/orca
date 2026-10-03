@@ -43,3 +43,10 @@ locations. Do not commit local profiles, runtime binaries or diagnostic logs.
 
 See [fork maintenance](../extensions/README.md) and
 [agent groups](../docs/reference/agent-groups.md) for the available features.
+
+## Local OpenCode CLI
+
+Run `tools\orca-dev.cmd install-opencode`, then restart Orca with the launcher.
+The pinned terminal CLI is installed in `tools/runtime/opencode-cli`; its path is
+used only by Orca and its children. `doctor` identifies accidental resolution to
+the OpenCode desktop app. Other providers still need their own CLI and login.

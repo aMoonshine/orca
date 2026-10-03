@@ -253,6 +253,8 @@ export function AgentGroupDialog({
               role="status"
             >
               {index + 1}. {receipt.state} · {receipt.dispatchId ?? receipt.lastError}
+              {receipt.failedStage && ` · ${receipt.failedStage}`}
+              {receipt.lastError && receipt.dispatchId && `: ${receipt.lastError}`}
             </p>
           ))}
           {snapshot.tasks.map((task) => (
@@ -298,7 +300,13 @@ export function AgentGroupDialog({
           )}
           <Button
             disabled={snapshot.busy || !ready}
-            onClick={() => void controller.launch(worktreeId, mode, objective, visibleWorkers)}
+            onClick={() =>
+              void controller.launch(worktreeId, mode, objective, visibleWorkers).then(() => {
+                if (!controller.getSnapshot().error) {
+                  onClose()
+                }
+              })
+            }
           >
             {snapshot.busy && <Loader2 className="animate-spin" />}
             {snapshot.busy

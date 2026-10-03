@@ -57,12 +57,30 @@ function fixture(
 }
 
 describe('agent group launch', () => {
+  it('refreshes durable task state when readiness times out', async () => {
+    const options: { tasks: unknown[]; receipts: unknown[] } = {
+      tasks: [],
+      receipts: [{ state: 'failed', lastError: 'timeout' }]
+    }
+    const { controller, calls } = fixture(options)
+    controller.subscribe(() => {
+      if (controller.getSnapshot().receipts.some((receipt) => receipt.state === 'failed')) {
+        options.tasks = [{ id: 'task-0', status: 'failed', spec: 'Review', result: null }]
+      }
+    })
+    await controller.launch('workspace', 'swarm', 'Goal', workers)
+    expect(controller.getSnapshot().tasks).toEqual(options.tasks)
+    expect(controller.getSnapshot().error).toBe('timeout')
+    expect(calls.filter((call) => call.method === 'orchestration.workerStart')).toHaveLength(1)
+  })
+
   it('creates a mode-bearing Run and starts the entire wave on its coordinator', async () => {
     const { controller, calls } = fixture()
     await controller.launch('folder:example', 'swarm', 'Review this project', workers)
     expect(controller.getSnapshot().error).toBeNull()
     expect(calls.find((call) => call.method === 'terminal.create')?.params).toMatchObject({
-      worktree: 'id:folder:example'
+      worktree: 'id:folder:example',
+      rendererBacked: true
     })
     expect(calls.find((call) => call.method === 'orchestration.runCreate')?.params).toMatchObject({
       mode: 'swarm',

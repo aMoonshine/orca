@@ -51,6 +51,32 @@ group. If its binding is gone, the UI reports the problem instead of taking over
 another Run. **New group** starts a fresh form context; it does not stop previous
 agents. Existing terminal/CLI recovery and release commands remain available.
 
+Worker terminals appear in split panels automatically. Two agents occupy adjacent
+panels; additional workers split those columns into rows. Existing terminal sessions
+are moved, not restarted. Resize the dividers or drag panels to change the layout.
+The launch dialog closes after a successful wave. Reopen **Launch agents** to read
+tasks, group messages, and advance the phase. Failed starts keep the dialog open,
+show their failed stage and error, and refresh task state from the execution host.
+
+## Windows agent installation
+
+Agents run as terminal CLIs inside Orca. The OpenCode desktop executable is not a
+CLI, although Windows can resolve both through the name `opencode`. Group launch
+rejects the known desktop path immediately instead of waiting for agent readiness.
+
+The source launcher supports `tools\orca-dev.cmd install-opencode`. This installs
+OpenCode CLI 1.18.34 under `tools/runtime/opencode-cli` and prepends its binary folder
+only for Orca's process tree. It does not change the global Windows PATH. Restart
+Orca through the launcher after installation. `doctor` reports the resolved path.
+The runtime folder is ignored by Git; the installer and pinned version are tracked.
+Package provenance: [OpenCode CLI installation](https://dev.opencode.ai/docs).
+
+Codex, Claude, and other agents still use their installed CLIs or a command set in
+Settings. Installation and authentication are separate: the provider must have a
+working login/API configuration. A local model also requires its server to be
+running. `Cannot connect to API` inside OpenCode means that its configured model
+endpoint is unavailable, even if Orca successfully started the terminal.
+
 Newer desktop orchestration requests include a contract version and a unique
 mutation identity. An older remote runtime that lacks work-mode RPCs is rejected
 before any worker is launched. Remote execution stays on the workspace's owning

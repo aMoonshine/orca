@@ -14,6 +14,8 @@ export type GroupReceipt = {
   dispatchId?: string
   state: string
   lastError?: string
+  failedStage?: string
+  effects?: { kind: string; role?: string; id?: string }[]
 }
 export type GroupTask = { id: string; status: string; spec: string; result: string | null }
 export type GroupSnapshot = {
@@ -35,7 +37,11 @@ const receiptSchema = z.object({
   taskId: z.string().optional(),
   dispatchId: z.string().optional(),
   state: z.string(),
-  lastError: z.string().optional()
+  lastError: z.string().optional(),
+  failedStage: z.string().optional(),
+  effects: z
+    .array(z.object({ kind: z.string(), role: z.string().optional(), id: z.string().optional() }))
+    .optional()
 })
 const tasksSchema = z.object({
   tasks: z.array(
@@ -86,7 +92,8 @@ export class AgentGroupController {
   constructor(
     private rpc: GroupRpc,
     private save: (run: GroupRun | null) => void,
-    run: GroupRun | null = null
+    run: GroupRun | null = null,
+    private present: (receipts: GroupReceipt[]) => Promise<void> = async () => {}
   ) {
     this.snapshot = { run, receipts: [], tasks: [], busy: false, error: null }
   }
@@ -109,6 +116,13 @@ export class AgentGroupController {
     try {
       await action()
     } catch (error) {
+      if (this.snapshot.run) {
+        try {
+          await this.readRun(this.snapshot.run)
+        } catch {
+          // Keep the original failure and last known tasks if the host is unavailable.
+        }
+      }
       this.update({ error: error instanceof Error ? error.message : String(error) })
     } finally {
       this.update({ busy: false })
@@ -167,7 +181,7 @@ export class AgentGroupController {
           await this.rpc('terminal.create', {
             worktree: `id:${worktreeId}`,
             title: 'Agent group coordinator',
-            presentation: 'background'
+            rendererBacked: true
           })
         )
         // Keep the handle in an error receipt if Run creation fails after terminal creation.
@@ -189,15 +203,13 @@ export class AgentGroupController {
       for (const [index, worker] of workers.entries()) {
         const isolated = run.mode === 'orchestrator' && run.phaseId === 'implementation'
         const spec = `Goal: ${objective.trim()}\n\nTask ${index + 1} of ${workers.length}:\n${worker.spec.trim()}`
-        const { task } = z
-          .object({ task: z.object({ id: z.string() }) })
-          .parse(
-            await this.rpc('orchestration.taskCreate', {
-              run: run.id,
-              callerTerminalHandle: run.from,
-              spec
-            })
-          )
+        const { task } = z.object({ task: z.object({ id: z.string() }) }).parse(
+          await this.rpc('orchestration.taskCreate', {
+            run: run.id,
+            callerTerminalHandle: run.from,
+            spec
+          })
+        )
         // A durable pending task blocks a duplicate wave even if the start reply is lost.
         this.update({
           tasks: [...this.snapshot.tasks, { id: task.id, status: 'pending', spec, result: null }]
@@ -216,6 +228,7 @@ export class AgentGroupController {
           })
         )
         this.update({ receipts: [...this.snapshot.receipts, receipt] })
+        await this.present(this.snapshot.receipts)
         if (receipt.state !== 'ready') {
           throw new Error(
             receipt.lastError ??

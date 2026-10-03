@@ -36,7 +36,7 @@
 #>
 [CmdletBinding()]
 param(
-  [ValidateSet('dev', 'doctor', 'install', 'native', 'install-node')]
+  [ValidateSet('dev', 'doctor', 'install', 'native', 'install-node', 'install-opencode')]
   [string]$Action = 'dev',
 
   [switch]$SkipWebBuild,
@@ -52,6 +52,12 @@ $RuntimeRoot = Join-Path $PSScriptRoot 'runtime'
 $NodeVersion = '24.21.0'
 $NodeDir = Join-Path $RuntimeRoot "node-v$NodeVersion-win-x64"
 $NodeExe = Join-Path $NodeDir 'node.exe'
+$OpenCodeVersion = '1.18.34'
+$OpenCodeRoot = Join-Path $RuntimeRoot 'opencode-cli'
+$OpenCodeBin = Join-Path $OpenCodeRoot 'node_modules\opencode-windows-x64\bin'
+if (Test-Path -LiteralPath (Join-Path $OpenCodeBin 'opencode.exe')) {
+  $env:PATH = "$OpenCodeBin;$env:PATH"
+}
 
 function Write-Step($message) {
   Write-Host "[orca-dev] $message" -ForegroundColor Cyan
@@ -138,6 +144,11 @@ function Invoke-NativeRuntimeCheck {
 Assert-RepoPresent
 
 switch ($Action) {
+  'install-opencode' {
+    $node = Use-LocalNode
+    & $node (Join-Path $NodeDir 'node_modules\npm\bin\npm-cli.js') install --prefix $OpenCodeRoot --save-exact --no-audit --no-fund "opencode-ai@$OpenCodeVersion"
+    exit $LASTEXITCODE
+  }
   'install-node' {
     Install-LocalNode
     exit 0
@@ -164,6 +175,12 @@ switch ($Action) {
       exit 1
     }
     Write-Step 'Native modules: OK'
+    $agent = Get-Command opencode -ErrorAction SilentlyContinue
+    if ($agent -and $agent.Source -match '@opencode-aidesktop') {
+      Write-Warn 'OpenCode is the desktop app. Install the terminal CLI: tools\orca-dev.cmd install-opencode'
+    } elseif ($agent) {
+      Write-Step "OpenCode CLI : $($agent.Source)"
+    }
     exit 0
   }
 
@@ -216,6 +233,11 @@ switch ($Action) {
     Write-Step 'Starting Orca from source (no packaging, no .exe build)'
     Push-Location $RepoRoot
     try {
+      if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot 'out\cli\index.js'))) {
+        Write-Step 'Building the local Orca CLI'
+        & $node (Join-Path $RepoRoot 'node_modules\typescript\bin\tsc') -p config/tsconfig.cli.json --outDir out --composite false --incremental false
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      }
       & $node (Join-Path $RepoRoot 'config\scripts\run-electron-vite-dev.mjs') @args
       exit $LASTEXITCODE
     } finally {

@@ -22,6 +22,8 @@ import { resolveBareAgentLaunchCommand } from './runtime-agent-launch-resolution
 import { buildAgentStartupPlan } from '../../shared/tui-agent-startup'
 import { resolveAgentStartupPlanInputs } from '../../shared/agent-startup-plan-inputs'
 import { agentStartedTelemetry } from '../agent-launch/agent-started-telemetry'
+import { resolveCliCommand } from '../../shared/node-cli-command-resolution'
+import { assertOpenCodeCliExecutable } from '../../shared/opencode-cli-executable'
 
 export class OrcaRuntimeWithResolveWorktreeRemovalTarget extends OrcaRuntimeWithRemoveManagedWorktree {
   protected async resolveWorktreeRemovalTarget(
@@ -213,6 +215,11 @@ export class OrcaRuntimeWithResolveWorktreeRemovalTarget extends OrcaRuntimeWith
       })
     if (!agent) {
       return opts
+    }
+    if (agent === 'opencode' && platform === 'win32' && !isRemote) {
+      assertOpenCodeCliExecutable(
+        settings.agentCmdOverrides?.opencode || resolveCliCommand('opencode')
+      )
     }
 
     const startupPlan = buildAgentStartupPlan({
