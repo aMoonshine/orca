@@ -7,7 +7,13 @@ import {
 } from '../../../shared/swarm/mode-protocols'
 import type { TuiAgent } from '../../../shared/tui-agent'
 
-export type GroupWorker = { id: string; agent: TuiAgent; spec: string; claims: string }
+export type GroupWorker = {
+  id: string
+  agent: TuiAgent
+  spec: string
+  claims: string
+  model?: string
+}
 export type GroupRun = { id: string; from: string; mode: AgentWorkMode; phaseId: string }
 export type GroupReceipt = {
   taskId?: string
@@ -219,6 +225,7 @@ export class AgentGroupController {
             from: run.from,
             run: run.id,
             agent: worker.agent,
+            ...(worker.model ? { model: worker.model } : {}),
             worktree: isolated ? 'new-child' : 'current',
             ...(isolated ? { name: `group-${run.id.slice(-8)}-${Date.now()}-${index + 1}` } : {}),
             task: task.id,

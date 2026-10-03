@@ -12,7 +12,8 @@ const draftSchema = z.object({
         id: z.string(),
         agent: z.string().refine(isTuiAgent),
         spec: z.string(),
-        claims: z.string()
+        claims: z.string(),
+        model: z.string().optional()
       })
     )
     .min(1)

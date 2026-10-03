@@ -38,6 +38,7 @@ import { AgentGroupWorkers } from './AgentGroupWorkers'
 import { AgentGroupInbox } from './AgentGroupInbox'
 import { EngineeringWorkflow } from './EngineeringWorkflow'
 import { loadGroupDraft, saveGroupDraft } from '@/lib/agent-group-draft'
+import { getAgentSessionOptionCatalog } from '../../../../shared/agent-session-option-catalog'
 
 const MODE_COPY: Record<AgentWorkMode, string> = {
   solo: 'One agent carries out a task.',
@@ -88,6 +89,8 @@ export function AgentGroupDialog({
       (worker) =>
         worker.spec.trim() &&
         options.some((option) => option.agent === worker.agent) &&
+        (!getAgentSessionOptionCatalog(worker.agent)?.supportsWorkerLaunchPreferences ||
+          worker.model?.trim()) &&
         (!phase.allowsFileClaims || mode === 'solo' || worker.claims.trim())
     )
 
@@ -233,6 +236,8 @@ export function AgentGroupDialog({
                 onClose={onClose}
               />
               <AgentGroupWorkers
+                target={target}
+                worktreeId={worktreeId}
                 workers={visibleWorkers}
                 options={options}
                 writable={phase.allowsFileClaims}

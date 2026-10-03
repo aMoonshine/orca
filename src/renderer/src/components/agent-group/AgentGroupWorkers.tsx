@@ -12,15 +12,21 @@ import {
 import { translate } from '@/i18n/i18n'
 import type { GroupWorker } from '@/lib/agent-group-launch'
 import type { TabAgentLaunchOption } from '../tab-bar/tab-agent-launch-options'
+import { AgentGroupModel } from './AgentGroupModel'
+import type { RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
 
 export function AgentGroupWorkers({
   workers,
+  target,
+  worktreeId,
   options,
   writable,
   disabled,
   onChange
 }: {
   workers: GroupWorker[]
+  target: RuntimeClientTarget
+  worktreeId: string
   options: TabAgentLaunchOption[]
   writable: boolean
   disabled: boolean
@@ -43,7 +49,7 @@ export function AgentGroupWorkers({
               onValueChange={(value) => {
                 const option = options.find((entry) => entry.agent === value)
                 if (option) {
-                  change({ agent: option.agent })
+                  change({ agent: option.agent, model: undefined })
                 }
               }}
             >
@@ -65,6 +71,20 @@ export function AgentGroupWorkers({
                 </SelectGroup>
               </SelectContent>
             </Select>
+            <AgentGroupModel
+              worker={worker}
+              target={target}
+              worktreeId={worktreeId}
+              disabled={disabled}
+              onChange={(model) => change({ model })}
+              onApplyAll={() =>
+                onChange(
+                  workers.map((entry) =>
+                    entry.agent === worker.agent ? { ...entry, model: worker.model } : entry
+                  )
+                )
+              }
+            />
             <Label htmlFor={id}>{translate('agentGroup.task', 'Task')}</Label>
             <Textarea
               id={id}

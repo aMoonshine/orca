@@ -13,6 +13,7 @@ import {
 import { GROK_SESSION_OPTION_CATALOG } from './agent-session-option-catalog-grok'
 import { MUSE_SESSION_OPTION_CATALOG } from './agent-session-option-catalog-muse'
 import { OMP_SESSION_OPTION_CATALOG } from './agent-session-option-catalog-omp'
+import { OPENCODE_SESSION_OPTION_CATALOG } from './agent-session-option-catalog-opencode'
 import type {
   AgentSessionOptionCatalog,
   AgentSessionOptionCatalogMap,
@@ -33,6 +34,7 @@ export type {
 export { createClaudeCatalogOptions }
 
 const CATALOGS: AgentSessionOptionCatalogMap = {
+  opencode: OPENCODE_SESSION_OPTION_CATALOG,
   antigravity: ANTIGRAVITY_SESSION_OPTION_CATALOG,
   claude: CLAUDE_SESSION_OPTION_CATALOG,
   codebuddy: CODEBUDDY_SESSION_OPTION_CATALOG,

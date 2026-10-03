@@ -2,6 +2,7 @@ import { getCommitMessageAgentSpec, type CommitMessageAgentSpec } from './commit
 import { GROK_MODEL_LIST_ARGS, parseGrokModelList } from './grok-model-list-probe'
 import { OMP_MODEL_LIST_ARGS, parseOmpModelList } from './omp-model-list-probe'
 import type { TuiAgent } from './tui-agent'
+import { parseOpenCodeModels } from './opencode-model-list'
 
 /** Why: model discovery reads only these fields; excluding the prompt-delivery
  *  half is what keeps a probe-only agent out of the commit-message registry. */
@@ -9,6 +10,15 @@ export type AgentModelProbeSpec = Omit<CommitMessageAgentSpec, 'promptDelivery' 
 
 /** Agents that support model discovery but are not commit-message agents. */
 const MODEL_DISCOVERY_ONLY_SPECS: Partial<Record<TuiAgent, AgentModelProbeSpec>> = {
+  opencode: {
+    id: 'opencode',
+    label: 'OpenCode',
+    binary: 'opencode',
+    modelSource: 'dynamic',
+    modelDiscovery: { binary: 'opencode', args: ['models'], parse: parseOpenCodeModels },
+    models: [],
+    defaultModelId: ''
+  },
   grok: {
     id: 'grok',
     label: 'Grok',

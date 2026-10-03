@@ -6,6 +6,18 @@ give each agent a task. The picker uses enabled agents detected on that workspac
 host. A wave can contain up to six agents; Solo, Planning, Judge, and Integration
 use one agent.
 
+Choose **Model** for each agent before launching. **Apply to all** copies the model
+to workers using the same CLI. Changing a worker's CLI clears its model selection;
+the form saves explicit choices for the next launch. The selected model overrides
+model flags in the CLI's default arguments before the task is sent.
+
+**Refresh models** queries the workspace's execution host. OpenCode uses
+`opencode models` and passes the selected `provider/model` ID with `--model`
+(verified with the project-pinned CLI 1.18.34). Other agents use their existing
+Orca model discovery adapters. If discovery fails, enter an exact model ID;
+providers without launch-time model support use their CLI configuration.
+The catalog does not verify provider login, quota, or a local server's availability.
+
 For a planning interview, enter the goal and choose **Discuss before implementation**.
 This opens one agent with `grill-with-docs`, asks one question at a time, and saves
 agreed decisions in project documents. Other engineering workflows are available

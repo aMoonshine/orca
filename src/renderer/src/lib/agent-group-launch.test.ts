@@ -57,6 +57,21 @@ function fixture(
 }
 
 describe('agent group launch', () => {
+  it('sends each selected model with its worker start before task delivery', async () => {
+    const { controller, calls } = fixture()
+    await controller.launch(
+      'workspace',
+      'swarm',
+      'Goal',
+      workers.map((worker, index) => ({ ...worker, model: `model-${index}` }))
+    )
+    expect(
+      calls.filter((call) => call.method === 'orchestration.workerStart').map((call) => call.params)
+    ).toEqual([
+      expect.objectContaining({ agent: 'codex', model: 'model-0' }),
+      expect.objectContaining({ agent: 'claude', model: 'model-1' })
+    ])
+  })
   it('refreshes durable task state when readiness times out', async () => {
     const options: { tasks: unknown[]; receipts: unknown[] } = {
       tasks: [],

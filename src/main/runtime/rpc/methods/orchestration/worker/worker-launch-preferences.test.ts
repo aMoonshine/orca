@@ -79,10 +79,10 @@ describe('orchestration worker launch preferences', () => {
     ).toThrow('does not support effort turbo')
   })
 
-  it('refuses an opencode model because the opencode 2 TUI rejects --model', () => {
-    expect(() =>
-      resolveWorkerLaunchPreferences({ agent: 'opencode', model: 'meta/muse-spark-1.3' })
-    ).toThrow('does not support launch-time model selection')
+  it('passes a provider-qualified model to the supported OpenCode CLI', () => {
+    expect(
+      resolveWorkerLaunchPreferences({ agent: 'opencode', model: 'local/qwen' }).preferences
+    ).toEqual({ model: 'local/qwen' })
   })
 
   it('does not invent an effort when only a model is requested', () => {
