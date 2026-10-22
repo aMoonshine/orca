@@ -19,7 +19,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 // Why: Vitest runs tests with `process.cwd()` pinned to the repo root, so
 // join against it to locate the compiled CLI regardless of where this test
@@ -35,6 +35,13 @@ function loadRuntimeModules() {
     import('./runtime-rpc')
   ])
 }
+
+// Runtime imports are fixture setup; their cold load must not consume the CLI wait budget.
+beforeAll(async () => {
+  if (existsSync(CLI_PATH)) {
+    await loadRuntimeModules()
+  }
+}, 120_000)
 
 async function runBuiltCli(
   userDataPath: string,

@@ -52,7 +52,7 @@ model flags in the CLI's default arguments before the task is sent.
 
 **Refresh models** queries the workspace's execution host. OpenCode uses
 `opencode models` and passes the selected `provider/model` ID with `--model`
-(verified with the project-pinned CLI 1.18.34). Other agents use their existing
+(verified with the project-pinned CLI 1.18.32). Other agents use their existing
 Orca model discovery adapters. If discovery fails, enter an exact model ID;
 providers without launch-time model support use their CLI configuration.
 The catalog does not verify provider login, quota, or a local server's availability.
@@ -112,8 +112,7 @@ show their failed stage and error, and refresh task state from the execution hos
 ## Windows agent installation
 
 Agents run as terminal CLIs inside Orca. The OpenCode desktop executable is not a
-CLI, although Windows can resolve both through the name `opencode`. Group launch
-rejects the known desktop path immediately instead of waiting for agent readiness.
+CLI, although Windows can resolve both through the name `opencode`. Launches with an explicit model use upstream execution-host capability and model-availability checks.
 
 The source launcher supports `tools\orca-dev.cmd install-opencode`. This installs
 OpenCode CLI 1.18.34 under `tools/runtime/opencode-cli` and prepends its binary folder
