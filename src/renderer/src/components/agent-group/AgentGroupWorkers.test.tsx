@@ -4,7 +4,26 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import type { GroupWorker } from '@/lib/agent-group-launch'
 import type { TabAgentLaunchOption } from '../tab-bar/tab-agent-launch-options'
-vi.mock('./AgentGroupModel', () => ({ AgentGroupModel: () => null }))
+vi.mock('./AgentGroupModel', () => ({
+  AgentGroupModel: ({
+    worker,
+    onChange,
+    onEffortChange,
+    onApplyAll
+  }: {
+    worker: GroupWorker
+    onChange: (model: string) => void
+    onEffortChange: (effort: string | undefined) => void
+    onApplyAll: () => void
+  }) => (
+    <>
+      <button onClick={() => onChange('gpt-6.1-sol')}>Model {worker.id}</button>
+      <button onClick={() => onEffortChange('high')}>Effort {worker.id}</button>
+      <button onClick={() => onEffortChange(undefined)}>Default {worker.id}</button>
+      <button onClick={onApplyAll}>Apply {worker.id}</button>
+    </>
+  )
+}))
 import { AgentGroupWorkers } from './AgentGroupWorkers'
 
 afterEach(cleanup)
@@ -68,4 +87,107 @@ describe('group provider selection', () => {
     ).toBe('true')
     expect(screen.getByLabelText('Task').getAttribute('id')).toBe('worker')
   })
+
+  const workers: GroupWorker[] = [
+    {
+      id: 'first',
+      agent: 'codex',
+      model: 'opaque/codex',
+      effort: 'high',
+      spec: 'Keep task',
+      claims: 'src/a'
+    },
+    {
+      id: 'second',
+      agent: 'codex',
+      model: 'older',
+      effort: 'low',
+      spec: 'Other task',
+      claims: 'src/b'
+    },
+    { id: 'third', agent: 'opencode', model: 'opencode/free', spec: '', claims: '' }
+  ]
+  const availableOptions: TabAgentLaunchOption[] = [
+    {
+      id: 'cli:codex',
+      agent: 'codex',
+      label: 'Codex CLI',
+      aliases: [],
+      row: { kind: 'cli', agent: 'codex' }
+    },
+    {
+      id: 'cli:opencode',
+      agent: 'opencode',
+      label: 'OpenCode CLI',
+      aliases: [],
+      row: { kind: 'cli', agent: 'opencode' }
+    }
+  ]
+
+  function renderWorkers(initialWorkers = workers) {
+    const onChange = vi.fn()
+    render(
+      <AgentGroupWorkers
+        workers={initialWorkers}
+        target={{ kind: 'local' }}
+        worktreeId="folder:test"
+        options={availableOptions}
+        writable={false}
+        disabled={false}
+        onChange={onChange}
+      />
+    )
+    return onChange
+  }
+
+  it('clears effort when the user changes provider', () => {
+    const onChange = renderWorkers()
+    fireEvent.keyDown(screen.getAllByRole('combobox')[0], { key: 'ArrowDown' })
+    fireEvent.click(screen.getByRole('option', { name: 'OpenCode CLI' }))
+    expect(onChange).toHaveBeenCalledWith([
+      { ...workers[0], agent: 'opencode', model: undefined, effort: undefined },
+      workers[1],
+      workers[2]
+    ])
+  })
+
+  it('clears effort when the user changes model', () => {
+    const onChange = renderWorkers()
+    fireEvent.click(screen.getByRole('button', { name: 'Model first' }))
+    expect(onChange).toHaveBeenCalledWith([
+      { ...workers[0], model: 'gpt-6.1-sol', effort: undefined },
+      workers[1],
+      workers[2]
+    ])
+  })
+
+  it('forwards an effort override and CLI default without changing the model', () => {
+    const onChange = renderWorkers()
+    fireEvent.click(screen.getByRole('button', { name: 'Effort second' }))
+    expect(onChange).toHaveBeenLastCalledWith([
+      workers[0],
+      { ...workers[1], effort: 'high' },
+      workers[2]
+    ])
+    fireEvent.click(screen.getByRole('button', { name: 'Default second' }))
+    expect(onChange).toHaveBeenLastCalledWith([
+      workers[0],
+      { ...workers[1], effort: undefined },
+      workers[2]
+    ])
+  })
+
+  it.each(['high', undefined])(
+    'applies model and effort %s only to matching providers',
+    (effort) => {
+      const source = { ...workers[0], effort }
+      const onChange = renderWorkers([source, workers[1], workers[2]])
+      fireEvent.click(screen.getByRole('button', { name: 'Apply first' }))
+      expect(onChange).toHaveBeenCalledWith([
+        source,
+        { ...workers[1], model: source.model, effort },
+        workers[2]
+      ])
+    }
+  )
 })

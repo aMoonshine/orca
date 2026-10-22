@@ -1,5 +1,6 @@
 import type { TabAgentLaunchOption } from '@/components/tab-bar/tab-agent-launch-options'
 import { getAgentSessionOptionCatalog } from '../../../shared/agent-session-option-catalog'
+import { checkAgentLaunchModelPreferences } from '../../../shared/agent-launch-model-preferences'
 import type { GroupWorker } from './agent-group-launch'
 
 function launchRank(option: TabAgentLaunchOption): number {
@@ -35,6 +36,16 @@ export function groupWorkerCanLaunch(
     options.some((option) => option.agent === worker.agent && launchRank(option) > 0) &&
     (getAgentSessionOptionCatalog(worker.agent)?.supportsWorkerLaunchPreferences
       ? worker.model?.trim()
-      : !worker.model?.trim())
+      : !worker.model?.trim()) &&
+    !(
+      'refusal' in
+      checkAgentLaunchModelPreferences({
+        agent: worker.agent,
+        model: worker.model,
+        effort: worker.effort,
+        // Configuration only; worker-start verifies OpenCode support on the execution host.
+        openCodeModelLaunchSupported: true
+      })
+    )
   )
 }

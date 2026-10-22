@@ -53,7 +53,7 @@ export function AgentGroupWorkers({
               onValueChange={(value) => {
                 const option = providers.find((entry) => entry.agent === value && !entry.disabled)
                 if (option && option.agent !== worker.agent) {
-                  change({ agent: option.agent, model: undefined })
+                  change({ agent: option.agent, model: undefined, effort: undefined })
                 }
               }}
             >
@@ -86,13 +86,19 @@ export function AgentGroupWorkers({
               target={target}
               worktreeId={worktreeId}
               disabled={disabled}
-              onChange={(model) => change({ model })}
-              onApplyAll={() =>
-                onChange(
-                  workers.map((entry) =>
-                    entry.agent === worker.agent ? { ...entry, model: worker.model } : entry
-                  )
-                )
+              onChange={(model) => change({ model, effort: undefined })}
+              onEffortChange={(effort) => change({ effort })}
+              onApplyAll={
+                workers.length < 2
+                  ? undefined
+                  : () =>
+                      onChange(
+                        workers.map((entry) =>
+                          entry.agent === worker.agent
+                            ? { ...entry, model: worker.model, effort: worker.effort }
+                            : entry
+                        )
+                      )
               }
             />
             {showTasks && (

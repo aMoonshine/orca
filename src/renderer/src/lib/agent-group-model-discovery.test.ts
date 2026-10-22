@@ -105,6 +105,20 @@ it('keeps legacy discovery on a host that lacks the catalog method', async () =>
   expect(await loadAgentGroupModels(local, 'repo::/project', 'codex')).toEqual(seedModels)
 })
 
+it('retains host effort metadata without changing exact model IDs', async () => {
+  const models = [
+    {
+      id: 'gpt-6.1-sol',
+      label: 'Host Sol',
+      defaultEffort: 'high',
+      efforts: [{ value: 'high', label: 'Host high' }]
+    },
+    { id: 'opaque/model', label: 'Unknown efforts', effortsKnown: false, efforts: [] }
+  ]
+  mocks.rpc.mockResolvedValueOnce({ origin: 'probe', models })
+  expect(await loadAgentGroupModels(local, 'folder:plain', 'codex')).toEqual(models)
+})
+
 it.each([local, { kind: 'environment', environmentId: 'server' } as const])(
   'surfaces a disconnected host instead of displaying the static seed: %j',
   async (target) => {

@@ -2,13 +2,34 @@
 
 ## Master chat
 
-**Launch agents** now opens **Master chat** by default. Enter one goal, select the
-master CLI/model and worker CLI/model, then choose up to 20 workers and **Start team**.
+**Launch agents** opens **Master chat** by default. Enter one goal, choose the
+master's provider, exact model and supported reasoning effort, then configure the
+available worker profiles and **Start team**. Each profile has its own provider,
+exact model, optional supported effort and purpose. Profiles are reusable choices
+for the master, rather than a fixed list of tasks or worker slots.
+
 The master is a real CLI conversation in the selected workspace. It checks the
-target, creates orchestration Tasks, dispatches workers with the exact model,
-handles questions and reviews results. Task decomposition and supervision are
-agent-driven; the count is an instruction to the master, not an OS resource quota.
-You can change the requested team and give follow-up instructions in that panel.
+target, creates orchestration Tasks, chooses a profile separately for each task,
+handles questions and reviews results. It can mix Codex and OpenCode profiles and
+different configured efforts in one wave. The initial parallelism hint guides
+pacing; it fixes neither the task count nor a concurrency ceiling. The master may
+use fewer or more agents and tasks as the work requires. You can change the team
+configuration and give follow-up instructions in that panel.
+
+Selected model IDs remain exact. Free OpenCode selections have no premium
+fallback: unavailable models produce a blocker rather than a silent substitution.
+The effort control exposes supported values for the selected provider and model.
+An explicit effort is passed with `--effort`; when no effort is selected, the flag
+is omitted. Unsupported explicit effort is rejected. Providers without launch-time
+model selection use their CLI configuration and omit `--model`. The launch
+configuration validates these preferences for both the master and worker profiles
+before the bootstrap is built.
+
+Save a named preset to reuse the master's configuration, worker profiles and
+parallelism hint. Presets are stored locally for the selected runtime target and
+workspace. Loading a preset fills the configuration without launching agents;
+deleting it removes only that saved preset. Presets contain no goal, active
+session identity or credentials. Saved models are checked again before launch.
 
 The launcher waits for host-side CLI readiness before sending the bootstrap. It
 saves the master identity before delivery and refuses duplicate starts after an
@@ -49,10 +70,12 @@ give each agent a task. The picker uses enabled agents detected on that workspac
 host. A wave can contain up to six agents; Solo, Planning, Judge, and Integration
 use one agent.
 
-Choose **Model** for each agent before launching. **Apply to all** copies the model
-to workers using the same CLI. Changing a worker's CLI clears its model selection;
-the form saves explicit choices for the next launch. The selected model overrides
-model flags in the CLI's default arguments before the task is sent.
+Choose **Model** and, where supported, reasoning effort for each agent before
+launching. **Apply to all** copies the model and effort to workers using the same
+CLI. Changing a worker's CLI clears both selections; changing its model clears
+the effort so it can be chosen for that model. The form saves explicit choices
+for the next launch. The selected model overrides model flags in the CLI's default
+arguments before the task is sent; an omitted effort uses the CLI default.
 
 **Refresh models** queries the workspace's execution host. OpenCode uses
 `opencode models` and passes the selected `provider/model` ID with `--model`

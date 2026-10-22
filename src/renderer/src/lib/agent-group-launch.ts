@@ -6,6 +6,7 @@ import {
   type AgentWorkMode
 } from '../../../shared/swarm/mode-protocols'
 import type { TuiAgent } from '../../../shared/tui-agent'
+import { checkAgentLaunchModelPreferences } from '../../../shared/agent-launch-model-preferences'
 
 export type GroupWorker = {
   id: string
@@ -13,6 +14,7 @@ export type GroupWorker = {
   spec: string
   claims: string
   model?: string
+  effort?: string
 }
 export type GroupRun = { id: string; from: string; mode: AgentWorkMode; phaseId: string }
 export type GroupReceipt = {
@@ -93,6 +95,19 @@ export function validateGroupWave(
     workers.some((worker) => !worker.claims.trim())
   ) {
     throw new Error('Assign file paths to every writer before launching this phase.')
+  }
+  for (const worker of workers) {
+    const result = checkAgentLaunchModelPreferences({
+      agent: worker.agent,
+      model: worker.model,
+      effort: worker.effort,
+      // Configuration only; worker-start verifies OpenCode support on the execution host.
+      openCodeModelLaunchSupported: true,
+      createsWorktree: mode === 'orchestrator' && phaseId === 'implementation'
+    })
+    if ('refusal' in result) {
+      throw new Error(result.refusal.message)
+    }
   }
 }
 
@@ -232,6 +247,7 @@ export class AgentGroupController {
             run: run.id,
             agent: worker.agent,
             ...(worker.model ? { model: worker.model } : {}),
+            ...(worker.effort ? { effort: worker.effort } : {}),
             worktree: isolated ? 'new-child' : 'current',
             ...(isolated ? { name: `group-${run.id.slice(-8)}-${Date.now()}-${index + 1}` } : {}),
             task: task.id,

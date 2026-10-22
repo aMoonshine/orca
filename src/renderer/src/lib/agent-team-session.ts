@@ -4,7 +4,10 @@ import type { RuntimeClientTarget } from '../../../shared/runtime-client-target'
 import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import { launchAgentInNewTab } from './launch-agent-in-new-tab'
 import { buildAgentTeamPrompt } from '../../../shared/agent-team-prompt'
-import type { TuiAgent } from '../../../shared/tui-agent'
+import {
+  agentTeamConfigurationSchema,
+  type AgentTeamConfiguration
+} from '../../../shared/agent-team-configuration'
 import { getAgentSessionOptionCatalog } from '../../../shared/agent-session-option-catalog'
 
 const savedSchema = z.object({ tabId: z.string(), handle: z.string().optional() })
@@ -22,11 +25,7 @@ export function readTeamSession(key: string): TeamSession | null {
 export async function startAgentTeam(args: {
   target: RuntimeClientTarget
   worktreeId: string
-  leader: TuiAgent
-  leaderModel: string
-  agent: TuiAgent
-  model: string
-  count: number
+  configuration: AgentTeamConfiguration
   objective: string
 }): Promise<void> {
   const key = teamSessionKey(args.target, args.worktreeId)
@@ -35,21 +34,20 @@ export async function startAgentTeam(args: {
       'Open the existing master session. Start another team only after detaching it explicitly.'
     )
   }
-  const prompt = buildAgentTeamPrompt(args)
-  const supportsModel = !!getAgentSessionOptionCatalog(args.leader)?.supportsWorkerLaunchPreferences
-  if (supportsModel && !args.leaderModel.trim()) {
-    throw new Error('Choose an exact model for the master agent.')
-  }
-  if (!supportsModel && args.leaderModel.trim()) {
-    throw new Error('This master agent does not support an explicit model override.')
-  }
+  const configuration = agentTeamConfigurationSchema.parse(args.configuration)
+  const prompt = buildAgentTeamPrompt({ objective: args.objective, configuration })
+  const { leader } = configuration
+  const supportsModel = !!getAgentSessionOptionCatalog(leader.agent)
+    ?.supportsWorkerLaunchPreferences
   const result = launchAgentInNewTab({
-    agent: args.leader,
+    agent: leader.agent,
     requestedSurface: 'terminal',
     requestId: newAgentLaunchRequestId(),
     quickCommandLabel: 'Master chat',
     worktreeId: args.worktreeId,
-    sessionOptions: supportsModel ? { model: args.leaderModel } : undefined,
+    sessionOptions: supportsModel
+      ? { model: leader.model, ...(leader.effort ? { effort: leader.effort } : {}) }
+      : undefined,
     beforeSurfaceOpen: (surface) => surface.kind !== 'host-published'
   })
   if (!result || result.surface.kind === 'host-published') {

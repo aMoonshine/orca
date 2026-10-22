@@ -126,8 +126,24 @@ export abstract class OrcaRuntimeWithWriteTerminalAgentPrompt extends OrcaRuntim
       }
     }
     const submits =
-      options.composerReady && !submitWithPaste
-        ? 1 + (await this.resubmitAgentPromptAfterRetryDelay(ptyId, generation, options))
+      (options.composerReady || options.retryInitialSubmit) && !submitWithPaste
+        ? 1 +
+          (await this.resubmitAgentPromptAfterRetryDelay(
+            ptyId,
+            generation,
+            options,
+            options.retryInitialSubmit
+              ? () => {
+                  const current = this.getAgentPromptActivity(handle, ptyId, waitTextCache)
+                  return (
+                    current.status !== 'permission' &&
+                    current.permissionSequence === baseline.permissionSequence &&
+                    current.workingSequence === baseline.workingSequence &&
+                    current.explicitWorkingStartedAt === baseline.explicitWorkingStartedAt
+                  )
+                }
+              : undefined
+          ))
         : 1
     const effectTimeoutMs = resolveAgentPromptEffectTimeoutMs(this.getPtyAgent(ptyId))
     if (!options.acceptQueued || !options.requestId) {
@@ -161,7 +177,7 @@ export abstract class OrcaRuntimeWithWriteTerminalAgentPrompt extends OrcaRuntim
     const checkpoint: RuntimeTerminalSend = {
       handle,
       accepted: true,
-      bytesWritten: Buffer.byteLength(pastePayload, 'utf8') + 1,
+      bytesWritten: Buffer.byteLength(pastePayload, 'utf8') + submits,
       prompt: inputAccepted
     }
     options.onInputAccepted?.(checkpoint)
@@ -219,13 +235,14 @@ export abstract class OrcaRuntimeWithWriteTerminalAgentPrompt extends OrcaRuntim
   }
 
   /**
-   * The desktop draft paste's second Enter, for agents whose composer can render before Enter is
+   * A first prompt's second Enter, for agents whose composer can render before Enter is
    * live (`submitRetryDelayMs`). Best effort: it never fails a prompt the first Enter submitted.
    */
   private async resubmitAgentPromptAfterRetryDelay(
     ptyId: string,
     generation: number,
-    options: RuntimeAgentPromptWriteOptions
+    options: RuntimeAgentPromptWriteOptions,
+    canRetry?: () => boolean
   ): Promise<number> {
     const agent = this.getPtyAgent(ptyId)
     const retryDelayMs = agent ? TUI_AGENT_CONFIG[agent]?.submitRetryDelayMs : undefined
@@ -235,7 +252,15 @@ export abstract class OrcaRuntimeWithWriteTerminalAgentPrompt extends OrcaRuntim
     try {
       await waitForAgentPromptDelay(retryDelayMs, options.signal)
       this.assertAgentPromptGeneration(ptyId, generation)
+      if (canRetry && !canRetry()) {
+        return 0
+      }
       await options.beforeWrite?.(ptyId)
+      assertAgentPromptRequestActive(options.signal)
+      this.assertAgentPromptGeneration(ptyId, generation)
+      if (canRetry && !canRetry()) {
+        return 0
+      }
       return this.ptyController?.write(ptyId, AGENT_PROMPT_SUBMIT, options.inputKind) ? 1 : 0
     } catch {
       return 0

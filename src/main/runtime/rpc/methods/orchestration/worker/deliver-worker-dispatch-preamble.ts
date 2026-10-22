@@ -131,7 +131,20 @@ export async function deliverWorkerDispatchPreamble(args: {
       kind: 'terminal',
       runtime,
       handle: terminalHandle,
-      ...(briefGuard ? { beforeWrite: briefGuard.beforeWrite } : {}),
+      ...(args.launchedAgent === 'codex' ? { retryInitialSubmit: true } : {}),
+      ...(briefGuard
+        ? {
+            beforeWrite: async (ptyId: string) => {
+              await briefGuard.beforeWrite(ptyId)
+              if (
+                args.db.getWorkerTerminalResourceByOwner(args.dispatchId)?.ownership_state ===
+                'user_owned'
+              ) {
+                throw new Error('worker_terminal_user_owned')
+              }
+            }
+          }
+        : {}),
       turn: { purpose: 'dispatch-preamble', body: preamble, operationId: args.requestId }
     })
     return { prompt: sent.prompt }

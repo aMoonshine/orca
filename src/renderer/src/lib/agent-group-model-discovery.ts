@@ -15,9 +15,19 @@ import type { GlobalSettings } from '../../../shared/global-settings-types'
 const resultSchema = z.object({
   success: z.boolean(),
   error: z.string().optional(),
-  models: z.array(z.object({ id: z.string(), label: z.string() })).optional()
+  models: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        efforts: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
+        defaultEffort: z.string().optional(),
+        effortsKnown: z.boolean().optional()
+      })
+    )
+    .optional()
 })
-export type GroupModel = { id: string; label: string }
+export type GroupModel = NonNullable<z.infer<typeof resultSchema>['models']>[number]
 const pending = new Map<string, Promise<GroupModel[]>>()
 export function agentGroupModelDiscoveryContextKey(
   target: RuntimeClientTarget,

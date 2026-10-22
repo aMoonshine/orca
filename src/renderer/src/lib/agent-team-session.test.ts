@@ -7,11 +7,25 @@ import { startAgentTeam, readTeamSession, teamSessionKey } from './agent-team-se
 const args = {
   target: { kind: 'local' as const },
   worktreeId: 'folder:test',
-  leader: 'opencode' as const,
-  leaderModel: 'provider/master',
-  agent: 'opencode' as const,
-  model: 'provider/worker',
-  count: 2,
+  configuration: {
+    leader: { agent: 'codex' as const, model: 'gpt-6.1-sol', effort: 'high' },
+    profiles: [
+      {
+        id: 'free',
+        agent: 'opencode' as const,
+        model: 'opencode/big-pickle',
+        purpose: 'Routine work'
+      },
+      {
+        id: 'complex',
+        agent: 'codex' as const,
+        model: 'gpt-6.1-sol',
+        effort: 'high',
+        purpose: 'Complex implementation'
+      }
+    ],
+    parallelismHint: 32
+  },
   objective: 'Review only'
 }
 describe('master session lifecycle', () => {
@@ -41,7 +55,7 @@ describe('master session lifecycle', () => {
     expect(mocks.launch).toHaveBeenCalledWith(
       expect.objectContaining({
         requestedSurface: 'terminal',
-        sessionOptions: { model: 'provider/master' }
+        sessionOptions: { model: 'gpt-6.1-sol', effort: 'high' }
       })
     )
     expect(mocks.launch.mock.calls[0][0].prompt).toBeUndefined()
@@ -53,8 +67,11 @@ describe('master session lifecycle', () => {
     expect(mocks.rpc.mock.calls[2][2]).toMatchObject({
       terminal: 'term-master',
       agentPrompt: true,
-      text: expect.stringContaining('provider/worker')
+      text: expect.stringContaining('opencode/big-pickle')
     })
+    expect(mocks.rpc.mock.calls[2][2].text).toContain('"effort":"high"')
+    expect(mocks.rpc.mock.calls[2][2].text).toContain('Initial parallelismHint: 32')
+    expect(mocks.rpc.mock.calls.every(([target]) => target === args.target)).toBe(true)
     await expect(startAgentTeam(args)).rejects.toThrow('existing master')
     expect(mocks.launch).toHaveBeenCalledTimes(1)
   })
@@ -71,7 +88,14 @@ describe('master session lifecycle', () => {
     })
   })
   it('launches unsupported providers with CLI defaults and bootstraps workers without model overrides', async () => {
-    await startAgentTeam({ ...args, leader: 'gemini', leaderModel: '', agent: 'gemini', model: '' })
+    await startAgentTeam({
+      ...args,
+      configuration: {
+        leader: { agent: 'gemini', model: '' },
+        profiles: [{ id: 'default', agent: 'gemini', model: '', purpose: 'General work' }],
+        parallelismHint: 1
+      }
+    })
     expect(mocks.launch).toHaveBeenCalledWith(
       expect.objectContaining({ agent: 'gemini', sessionOptions: undefined })
     )
@@ -79,10 +103,46 @@ describe('master session lifecycle', () => {
     expect(mocks.rpc.mock.calls[2][2].text).toContain('"agent":"gemini"')
   })
   it.each([
-    { leader: 'gemini' as const, leaderModel: 'explicit/model' },
-    { leader: 'opencode' as const, leaderModel: '' }
+    { agent: 'gemini' as const, model: 'explicit/model' },
+    { agent: 'opencode' as const, model: '' }
   ])('rejects an invalid master override before opening a surface: %s', async (leader) => {
-    await expect(startAgentTeam({ ...args, ...leader })).rejects.toThrow()
+    await expect(
+      startAgentTeam({ ...args, configuration: { ...args.configuration, leader } })
+    ).rejects.toThrow()
     expect(mocks.launch).not.toHaveBeenCalled()
+  })
+  it('rejects invalid worker preferences before launching the master', async () => {
+    await expect(
+      startAgentTeam({
+        ...args,
+        configuration: {
+          ...args.configuration,
+          profiles: [
+            {
+              id: 'unsupported',
+              agent: 'opencode',
+              model: 'opencode/big-pickle',
+              effort: 'high',
+              purpose: ''
+            }
+          ]
+        }
+      })
+    ).rejects.toThrow()
+    expect(mocks.launch).not.toHaveBeenCalled()
+  })
+  it('keeps the saved master after a send failure and refuses an unknown retry', async () => {
+    mocks.rpc.mockImplementation(async (_target: unknown, method: string) => {
+      if (method === 'terminal.list') {
+        return { terminals: [{ handle: 'term-master', tabId: 'master-tab' }] }
+      }
+      if (method === 'terminal.wait') {
+        return { wait: { satisfied: true, status: 'satisfied' } }
+      }
+      throw new Error('connection lost')
+    })
+    await expect(startAgentTeam(args)).rejects.toThrow('connection lost')
+    await expect(startAgentTeam(args)).rejects.toThrow('existing master')
+    expect(mocks.launch).toHaveBeenCalledTimes(1)
   })
 })

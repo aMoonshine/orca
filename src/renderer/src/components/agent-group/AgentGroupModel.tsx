@@ -18,6 +18,9 @@ import {
 } from '@/components/ui/select'
 import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 import { getAgentSessionOptionCatalog } from '../../../../shared/agent-session-option-catalog'
+import { getAgentSessionOptionLaunchCatalog } from '../../../../shared/agent-session-option-launch'
+import { checkAgentLaunchModelPreferences } from '../../../../shared/agent-launch-model-preferences'
+import { agentSessionEffortLevels } from '../../../../shared/agent-session-effort-levels'
 import type { GroupWorker } from '@/lib/agent-group-launch'
 import { translate } from '@/i18n/i18n'
 
@@ -27,14 +30,16 @@ export function AgentGroupModel({
   worktreeId,
   disabled,
   onChange,
-  onApplyAll
+  onApplyAll,
+  onEffortChange
 }: {
   worker: GroupWorker
   target: RuntimeClientTarget
   worktreeId: string
   disabled: boolean
   onChange: (model: string) => void
-  onApplyAll: () => void
+  onApplyAll?: () => void
+  onEffortChange?: (effort: string | undefined) => void
 }) {
   const supported = !!getAgentSessionOptionCatalog(worker.agent)?.supportsWorkerLaunchPreferences
   const [models, setModels] = useState<GroupModel[]>([])
@@ -90,6 +95,36 @@ export function AgentGroupModel({
     )
   }
   const id = `${worker.id}-model`
+  const model = models.find((entry) => entry.id === worker.model)
+  const launchCatalog = getAgentSessionOptionLaunchCatalog(worker.agent)
+  const catalogModel = launchCatalog?.models.find((entry) => entry.id === worker.model)
+  const effortOption = (catalogModel?.options ?? launchCatalog?.unknownModelOptions)?.find(
+    (option) => option.id === 'effort'
+  )
+  const hostLevels = agentSessionEffortLevels(
+    model?.efforts !== undefined
+      ? { efforts: model.efforts, ...(model.effortsKnown === false ? { effortsKnown: false } : {}) }
+      : undefined
+  )
+  const effortChoices =
+    effortOption?.kind.type === 'select' && effortOption.apply.launchArgs && worker.model
+      ? (hostLevels === null ? effortOption.kind.choices : (model?.efforts ?? [])).filter(
+          (choice) =>
+            !(
+              'refusal' in
+              checkAgentLaunchModelPreferences({
+                agent: worker.agent,
+                model: worker.model,
+                effort: choice.value,
+                openCodeModelLaunchSupported: true
+              })
+            )
+        )
+      : []
+  const supportsEffort = effortOption?.kind.type === 'select' && !!effortOption.apply.launchArgs
+  const invalidEffort =
+    !!worker.effort && !effortChoices.some((choice) => choice.value === worker.effort)
+  const effortId = `${worker.id}-effort`
   return (
     <div className="flex flex-col gap-2">
       <Label htmlFor={id}>{translate('agentGroup.model', 'Model')}</Label>
@@ -133,6 +168,59 @@ export function AgentGroupModel({
           {error}
         </p>
       )}
+      {onEffortChange && supportsEffort && (effortChoices.length > 0 || worker.effort) && (
+        <>
+          <Label htmlFor={effortId}>{translate('agentGroup.effort', 'Reasoning effort')}</Label>
+          <Select
+            value={worker.effort ?? '__cli_default__'}
+            disabled={disabled || loading}
+            onValueChange={(value) =>
+              onEffortChange(value === '__cli_default__' ? undefined : value)
+            }
+          >
+            <SelectTrigger id={effortId} className="w-full" aria-invalid={invalidEffort}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="__cli_default__">
+                  {translate('agentGroup.effortDefault', 'CLI default')}
+                  {model?.defaultEffort ? ` (${model.defaultEffort})` : ''}
+                </SelectItem>
+                {invalidEffort && worker.effort && (
+                  <SelectItem value={worker.effort} disabled>
+                    {worker.effort} ({translate('agentGroup.effortUnavailable', 'unavailable')})
+                  </SelectItem>
+                )}
+                {effortChoices.map((choice) => (
+                  <SelectItem key={choice.value} value={choice.value}>
+                    {choice.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          {invalidEffort && (
+            <p role="alert" className="text-xs text-destructive">
+              {translate(
+                'agentGroup.effortInvalid',
+                'This effort is unavailable for the selected model. Choose another effort or CLI default.'
+              )}
+            </p>
+          )}
+        </>
+      )}
+      {worker.effort && !supportsEffort && (
+        <p role="alert" className="text-xs text-destructive">
+          {translate(
+            'agentGroup.effortUnsupported',
+            'This agent cannot launch with effort {{effort}}.',
+            {
+              effort: worker.effort
+            }
+          )}
+        </p>
+      )}
       <div className="flex gap-2">
         <Button
           type="button"
@@ -143,17 +231,19 @@ export function AgentGroupModel({
         >
           {translate('agentGroup.refreshModels', 'Refresh models')}
         </Button>
-        <Button
-          type="button"
-          size="xs"
-          variant="ghost"
-          disabled={disabled || !worker.model}
-          onClick={onApplyAll}
-        >
-          {translate('agentGroup.applyModel', 'Apply to all {{agent}} agents', {
-            agent: worker.agent
-          })}
-        </Button>
+        {onApplyAll && (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            disabled={disabled || !worker.model}
+            onClick={onApplyAll}
+          >
+            {translate('agentGroup.applyModel', 'Apply to all {{agent}} agents', {
+              agent: worker.agent
+            })}
+          </Button>
+        )}
       </div>
     </div>
   )

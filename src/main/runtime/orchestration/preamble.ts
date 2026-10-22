@@ -190,7 +190,13 @@ ${params.taskSpec}`
 
 export type DispatchPreambleSendOptions = Pick<
   RuntimeAgentPromptWriteOptions,
-  'leadLine' | 'acceptQueued' | 'observationTimeoutMs' | 'requestId' | 'inputKind' | 'beforeWrite'
+  | 'leadLine'
+  | 'acceptQueued'
+  | 'observationTimeoutMs'
+  | 'requestId'
+  | 'inputKind'
+  | 'beforeWrite'
+  | 'retryInitialSubmit'
 >
 
 export function dispatchPreambleSendOptions(requestId: string): DispatchPreambleSendOptions {

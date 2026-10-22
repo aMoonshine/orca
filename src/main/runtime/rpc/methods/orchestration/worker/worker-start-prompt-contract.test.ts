@@ -57,7 +57,8 @@ type PromptContractHarness = {
 }
 
 async function createPromptContractHarness(
-  outcome: 'accepted' | 'swallowed'
+  outcome: 'accepted' | 'swallowed' | 'first-enter-swallowed' | 'permission-after-enter',
+  onFirstSubmit?: () => void
 ): Promise<PromptContractHarness> {
   let composerReady = false
   let submittedTurns = 0
@@ -77,10 +78,16 @@ async function createPromptContractHarness(
       return
     }
     submittedTurns += 1
+    if (submittedTurns === 1) {
+      onFirstSubmit?.()
+    }
+    if (outcome === 'permission-after-enter') {
+      runtime.onPtyData('pty-prompt', '\x1b]0;Codex waiting for permission\x07', Date.now())
+    }
     if (!composerReady) {
       prematureSubmits += 1
     }
-    if (outcome === 'accepted') {
+    if (outcome === 'accepted' || (outcome === 'first-enter-swallowed' && submittedTurns === 2)) {
       startedTurns += 1
       runtime.onPtyData('pty-prompt', '\x1b]0;Codex working\x07', Date.now())
     }
@@ -184,6 +191,44 @@ describe('orchestration worker-start prompt contract', () => {
     vi.useRealTimers()
   })
 
+  it('submits a fresh Codex brief when the first Enter leaves it in the composer', async () => {
+    vi.useFakeTimers()
+    const harness = await createPromptContractHarness('first-enter-swallowed')
+    const pending = harness.dispatcher.dispatch(harness.request)
+    await vi.runAllTimersAsync()
+    const response = await pending
+
+    expect(response).toMatchObject({ ok: true, result: { state: 'ready' } })
+    expect(harness.startedTurns()).toBe(1)
+    expect(harness.prematureSubmits()).toBe(0)
+    expect(
+      harness.writes.filter((data) => data.includes(AGENT_PROMPT_BRACKETED_PASTE_END))
+    ).toHaveLength(1)
+    expect(harness.writes.filter((data) => data === '\r')).toHaveLength(2)
+  })
+
+  it('does not send the recovery Enter into a permission prompt', async () => {
+    vi.useFakeTimers()
+    const harness = await createPromptContractHarness('permission-after-enter')
+    const pending = harness.dispatcher.dispatch(harness.request)
+    await vi.runAllTimersAsync()
+    await pending
+    expect(harness.submittedTurns()).toBe(1)
+    expect(harness.startedTurns()).toBe(0)
+  })
+
+  it('does not send the recovery Enter after the user takes over the worker', async () => {
+    vi.useFakeTimers()
+    const harness = await createPromptContractHarness('first-enter-swallowed', () => {
+      expect(harness.db.markWorkerTerminalUserOwned(WORKER_PANE_KEY)).toBe(1)
+    })
+    const pending = harness.dispatcher.dispatch(harness.request)
+    await vi.runAllTimersAsync()
+    await pending
+    expect(harness.submittedTurns()).toBe(1)
+    expect(harness.startedTurns()).toBe(0)
+  })
+
   it('durably accepts exactly one submitted and started turn', async () => {
     vi.useFakeTimers()
     const harness = await createPromptContractHarness('accepted')
@@ -278,7 +323,7 @@ describe('orchestration worker-start prompt contract', () => {
       status: 'pending',
       capability_revoked_at: null
     })
-    expect(harness.submittedTurns()).toBe(1)
+    expect(harness.submittedTurns()).toBe(2)
     expect(vi.getTimerCount()).toBe(0)
   })
 
@@ -332,11 +377,11 @@ describe('orchestration worker-start prompt contract', () => {
     }
     const dispatchId = (response.result as { dispatchId: string }).dispatchId
     await vi.advanceTimersByTimeAsync(20_000)
-    // Unverifiable is not failure: exactly one submit, no blind retry, nothing torn down.
-    expect(harness.submittedTurns()).toBe(1)
+    // The initial delivery has one bounded Enter retry; observation never sends more input.
+    expect(harness.submittedTurns()).toBe(2)
     expect(harness.startedTurns()).toBe(0)
     expect(harness.prematureSubmits()).toBe(0)
-    expect(harness.writes.filter((data) => data === '\r')).toHaveLength(1)
+    expect(harness.writes.filter((data) => data === '\r')).toHaveLength(2)
     const persisted = reopenPromptContractDb(harness)
     expect(persisted.getTask(harness.taskId)?.status).toBe('blocked')
     expect(persisted.getDispatchContextById(dispatchId)).toMatchObject({

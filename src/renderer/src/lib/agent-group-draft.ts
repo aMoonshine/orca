@@ -13,7 +13,8 @@ const draftSchema = z.object({
         agent: z.string().refine(isTuiAgent),
         spec: z.string(),
         claims: z.string(),
-        model: z.string().optional()
+        model: z.string().optional(),
+        effort: z.string().optional()
       })
     )
     .min(1)

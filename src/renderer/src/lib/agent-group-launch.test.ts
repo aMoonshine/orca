@@ -39,14 +39,17 @@ function fixture(
         return { task: { id: `task-${index}` } }
       case 'orchestration.runPhaseAdvance':
         return { workMode: { ...run, phaseId: 'implementation' } }
-      case 'orchestration.workerStart':
+      case 'orchestration.workerStart': {
+        const receipt = options.receipts?.[index]
+        index += 1
         return (
-          options.receipts?.[index++] ?? {
+          receipt ?? {
             state: 'ready',
             taskId: `task-${index}`,
             dispatchId: `dispatch-${index}`
           }
         )
+      }
       default:
         throw new Error(`Unexpected RPC ${method}`)
     }
@@ -57,20 +60,88 @@ function fixture(
 }
 
 describe('agent group launch', () => {
-  it('sends each selected model with its worker start before task delivery', async () => {
+  it('sends exact mixed models and explicit Codex high effort without adding defaults', async () => {
     const { controller, calls } = fixture()
-    await controller.launch(
-      'workspace',
-      'swarm',
-      'Goal',
-      workers.map((worker, index) => ({ ...worker, model: `model-${index}` }))
-    )
+    await controller.launch('workspace', 'swarm', 'Goal', [
+      { ...workers[0], model: 'gpt-6.1-sol', effort: 'high' },
+      { ...workers[1], model: 'sonnet' },
+      { ...workers[0], id: 'worker-c', agent: 'opencode', model: 'opencode/big-pickle' }
+    ])
     expect(
       calls.filter((call) => call.method === 'orchestration.workerStart').map((call) => call.params)
     ).toEqual([
-      expect.objectContaining({ agent: 'codex', model: 'model-0' }),
-      expect.objectContaining({ agent: 'claude', model: 'model-1' })
+      {
+        from: 'term-1',
+        run: 'run-1',
+        agent: 'codex',
+        model: 'gpt-6.1-sol',
+        effort: 'high',
+        worktree: 'current',
+        task: 'task-0'
+      },
+      {
+        from: 'term-1',
+        run: 'run-1',
+        agent: 'claude',
+        model: 'sonnet',
+        worktree: 'current',
+        task: 'task-1'
+      },
+      {
+        from: 'term-1',
+        run: 'run-1',
+        agent: 'opencode',
+        model: 'opencode/big-pickle',
+        worktree: 'current',
+        task: 'task-2'
+      }
     ])
+    expect(controller.getSnapshot().error).toBeNull()
+  })
+
+  it('keeps an unsupported provider on its CLI defaults without model or effort fields', async () => {
+    const { controller, calls } = fixture()
+    await controller.launch('workspace', 'swarm', 'Goal', [
+      { ...workers[0], agent: 'gemini', model: '' }
+    ])
+    const starts = calls.filter((call) => call.method === 'orchestration.workerStart')
+    expect(starts).toHaveLength(1)
+    expect(starts[0].params).toMatchObject({ agent: 'gemini' })
+    expect(starts[0].params).not.toHaveProperty('model')
+    expect(starts[0].params).not.toHaveProperty('effort')
+    expect(controller.getSnapshot().error).toBeNull()
+  })
+
+  const invalidWorkers: GroupWorker[] = [
+    { ...workers[0], agent: 'opencode', model: 'opencode/big-pickle', effort: 'high' },
+    { ...workers[0], model: 'gpt-6.1-sol', effort: 'invalid' },
+    { ...workers[0], effort: 'high' },
+    { ...workers[0], agent: 'gemini', model: 'explicit-model' }
+  ]
+  it.each(invalidWorkers)(
+    'refuses invalid $agent/$model/$effort before creating any resources',
+    async (worker) => {
+      const { controller, calls } = fixture()
+      await controller.launch('workspace', 'swarm', 'Goal', [workers[0], worker])
+      expect(controller.getSnapshot().error).toBeTruthy()
+      expect(calls).toEqual([])
+    }
+  )
+
+  it('refuses an invalid effort in an existing Run before task or worker writes', async () => {
+    const { controller, calls } = fixture({
+      run: { id: 'run-1', from: 'term-1', mode: 'swarm', phaseId: 'coordination' }
+    })
+    await controller.launch('workspace', 'swarm', 'Goal', [
+      workers[0],
+      { ...workers[1], agent: 'opencode', model: 'opencode/big-pickle', effort: 'high' }
+    ])
+    expect(controller.getSnapshot().error).toContain('does not support effort high')
+    expect(
+      calls.some(({ method }) =>
+        ['orchestration.taskCreate', 'orchestration.workerStart'].includes(method)
+      )
+    ).toBe(false)
   })
   it('refreshes durable task state when readiness times out', async () => {
     const options: { tasks: unknown[]; receipts: unknown[] } = {
