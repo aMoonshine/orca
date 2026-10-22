@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { callRuntimeRpc, type RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
+import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
+import type { RuntimeClientTarget } from '../../../shared/runtime-client-target'
 import { AgentGroupController, type GroupRun } from './agent-group-launch'
 import { showAgentGroupPanels } from './agent-group-panels'
 const controllers = new Map<string, AgentGroupController>()

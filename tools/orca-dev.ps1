@@ -52,7 +52,7 @@ $RuntimeRoot = Join-Path $PSScriptRoot 'runtime'
 $NodeVersion = '24.21.0'
 $NodeDir = Join-Path $RuntimeRoot "node-v$NodeVersion-win-x64"
 $NodeExe = Join-Path $NodeDir 'node.exe'
-$OpenCodeVersion = '1.18.34'
+$OpenCodeVersion = '1.18.32'
 $OpenCodeRoot = Join-Path $RuntimeRoot 'opencode-cli'
 $OpenCodeBin = Join-Path $OpenCodeRoot 'node_modules\opencode-windows-x64\bin'
 if (Test-Path -LiteralPath (Join-Path $OpenCodeBin 'opencode.exe')) {
@@ -141,6 +141,15 @@ function Invoke-NativeRuntimeCheck {
   return $LASTEXITCODE
 }
 
+function Build-WorkspacePackages {
+  param([string]$Node)
+  Push-Location $RepoRoot
+  try {
+    & $Node '--import' 'tsx' '--conditions=orca-source' 'src/packages/process-host/scripts/build-dist.mjs'
+    if ($LASTEXITCODE -ne 0) { throw 'Workspace package build failed.' }
+  } finally { Pop-Location }
+}
+
 Assert-RepoPresent
 
 switch ($Action) {
@@ -186,6 +195,7 @@ switch ($Action) {
 
   'install' {
     $node = Use-LocalNode
+    Build-WorkspacePackages -Node $node
     Write-Step 'Rebuilding native modules for Electron'
     Push-Location $RepoRoot
     try {
@@ -213,6 +223,7 @@ switch ($Action) {
   'dev' {
     $node = Use-LocalNode
     Write-Step "Node v$NodeVersion (project-local)"
+    Build-WorkspacePackages -Node $node
 
     if (-not $SkipNativeCheck) {
       # Why gate the launch on this: without it Electron starts and then every
@@ -233,11 +244,9 @@ switch ($Action) {
     Write-Step 'Starting Orca from source (no packaging, no .exe build)'
     Push-Location $RepoRoot
     try {
-      if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot 'out\cli\index.js'))) {
-        Write-Step 'Building the local Orca CLI'
-        & $node (Join-Path $RepoRoot 'node_modules\typescript\bin\tsc') -p config/tsconfig.cli.json --outDir out --composite false --incremental false
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      }
+      Write-Step 'Building the local Orca CLI'
+      & $node (Join-Path $RepoRoot 'config\scripts\build-cli.mjs')
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       & $node (Join-Path $RepoRoot 'config\scripts\run-electron-vite-dev.mjs') @args
       exit $LASTEXITCODE
     } finally {

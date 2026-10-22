@@ -25,7 +25,7 @@ export async function showAgentGroupPanels(
     const terminal = receipt.effects?.find(
       (effect) => effect.kind === 'terminal' && effect.role === 'agent'
     )
-    if (!terminal?.id || terminal.id.startsWith('session:')) {
+    if (!terminal?.id || terminal.id.startsWith('orca_session_id:')) {
       continue
     }
     try {

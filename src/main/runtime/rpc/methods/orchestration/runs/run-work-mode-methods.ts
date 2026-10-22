@@ -16,6 +16,7 @@ import {
 export const ORCHESTRATION_RUN_WORK_MODE_METHODS = [
   defineMethod({
     name: 'orchestration.runMode',
+    permission: 'workspace',
     params: RunModeParams,
     handler: (params, { runtime, orchestrationCaller }) => {
       const db = runtime.getOrchestrationDb()
@@ -30,6 +31,7 @@ export const ORCHESTRATION_RUN_WORK_MODE_METHODS = [
   }),
   defineMethod({
     name: 'orchestration.runModeSet',
+    permission: 'workspace',
     params: RunModeSetParams,
     handler: (params, { runtime, orchestrationCaller }) => {
       const db = runtime.getOrchestrationDb()
@@ -49,6 +51,7 @@ export const ORCHESTRATION_RUN_WORK_MODE_METHODS = [
   }),
   defineMethod({
     name: 'orchestration.runPhaseAdvance',
+    permission: 'workspace',
     params: RunPhaseAdvanceParams,
     handler: (params, { runtime, orchestrationCaller }) => {
       const db = runtime.getOrchestrationDb()

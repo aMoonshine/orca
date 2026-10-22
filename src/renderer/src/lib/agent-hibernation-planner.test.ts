@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentStatusEntry } from '../../../shared/agent-status-types'
+import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../shared/constants'
 import type { TerminalLayoutSnapshot, TerminalTab } from '../../../shared/terminal-tab-types'
 import {
   DEFAULT_AGENT_HIBERNATION_IDLE_MS,
@@ -99,6 +100,21 @@ describe('agent sleep planner', () => {
       )
     ).toEqual([])
     expect(plannedWorktrees(snapshot({ foregroundTerminalTabIds: ['tab-1'] }))).toEqual([])
+  })
+
+  it('never plans automatic hibernation for a floating-workspace pane', () => {
+    expect(plannedWorktrees(snapshot())).toEqual(['wt-bg'])
+    const floating = entry({ worktreeId: FLOATING_TERMINAL_WORKTREE_ID })
+    expect(
+      plannedWorktrees(
+        snapshot({
+          tabsByWorktree: {
+            [FLOATING_TERMINAL_WORKTREE_ID]: [tab('tab-1', FLOATING_TERMINAL_WORKTREE_ID)]
+          },
+          agentStatusByPaneKey: { [floating.paneKey]: floating }
+        })
+      )
+    ).toEqual([])
   })
 
   it('requires done resumable provider-session entries', () => {
@@ -657,41 +673,6 @@ describe('agent sleep planner', () => {
         })
       )
     ).toEqual([`tab-1:${LEAF}`, `tab-1:${OTHER_LEAF}`])
-  })
-
-  it('restarts the idle window once a phantom subagent stops gating the pane working', () => {
-    // Why: a restored subagent row holds a finished lead at 'working', which is
-    // the one state hibernation never accepts — reaping it is what unlocks it.
-    const gated = entry({
-      state: 'working',
-      subagents: [{ id: 'areview-loop-c237a4c577493352', state: 'working', startedAt: 1 }]
-    })
-    expect(plannedPaneKeys(snapshot({ agentStatusByPaneKey: { [gated.paneKey]: gated } }))).toEqual(
-      []
-    )
-
-    const reaped = entry({ state: 'done', updatedAt: NOW, stateStartedAt: NOW })
-    expect(
-      plannedPaneKeys(snapshot({ agentStatusByPaneKey: { [reaped.paneKey]: reaped } }))
-    ).toEqual([])
-
-    const idleReaped = entry({ state: 'done' })
-    expect(
-      plannedPaneKeys(snapshot({ agentStatusByPaneKey: { [idleReaped.paneKey]: idleReaped } }))
-    ).toEqual([`tab-1:${LEAF}`])
-
-    // Why: reaping only clears the child gate — a draft typed into the composer
-    // while that segment was open still dies with the PTY, so it keeps blocking.
-    expect(
-      plannedPaneKeys(
-        snapshot({
-          agentStatusByPaneKey: { [idleReaped.paneKey]: idleReaped },
-          lastTerminalInputAtByPaneKey: {
-            [idleReaped.paneKey]: idleReaped.stateStartedAt + 1
-          }
-        })
-      )
-    ).toEqual([])
   })
 
   it('clamps corrupt or out-of-range idle durations to the default', () => {

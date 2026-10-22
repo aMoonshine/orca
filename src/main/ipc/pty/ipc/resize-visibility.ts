@@ -5,9 +5,9 @@ import type {
   PtyRendererDeliveryStateReport
 } from '../../../../shared/pty-renderer-delivery-health'
 import { redactPtyIdForDiagnostics } from '../../../../shared/pty-delivery-diagnostics'
-import { setTerminalViewAttributes } from '../../../runtime/terminal-view-attribute-store'
-import { validateTerminalViewAttributes } from '../../../../shared/terminal-view-attributes'
+import { installTerminalViewAttributesIpc } from './terminal-view-attributes-ipc'
 import {
+  consumeHiddenRendererPtyDropMemory,
   recordHiddenRendererPtyDataDrop,
   setRendererPtyDeliveryInterest,
   shouldDropHiddenRendererPtyData
@@ -29,6 +29,8 @@ import { PTY_DELIVERY_HEAL_MIN_ACK_SILENCE_MS } from '../delivery/constants'
 import { applyCumulativeAck } from '../delivery/accounting'
 import { sendModelRestoreNeededMarker } from '../delivery/payload'
 import { isMainWindowPtyIpcEvent } from './write-input'
+import { acknowledgePaintedColdRestore } from './painted-cold-restore-ack'
+import type { PaintedRestoreAck } from '../../../../shared/painted-restore-ack'
 import type { PtyIpcSession } from '../session'
 
 export function installPtyResizeVisibilityIpc(session: PtyIpcSession): void {
@@ -72,12 +74,26 @@ export function installPtyResizeVisibilityIpc(session: PtyIpcSession): void {
 
   // Why: fire-and-forget — clears the DaemonPtyAdapter's sticky cold-restore cache after the renderer consumed it; no-op for non-daemon providers.
   ipcMain.removeAllListeners('pty:ackColdRestore')
-  ipcMain.on('pty:ackColdRestore', (_event, args: { id: string }) => {
-    const provider = tryGetProviderForPty(args.id)
-    if (provider && 'ackColdRestore' in provider && typeof provider.ackColdRestore === 'function') {
-      provider.ackColdRestore(args.id)
-    }
+  ipcMain.on('pty:ackColdRestore', (_event, args: Partial<PaintedRestoreAck> | undefined) => {
+    acknowledgePaintedColdRestore(args, (pane, ptyId) =>
+      Boolean(runtime?.isRestoredPaneBoundTo(pane, ptyId))
+    )
   })
+
+  // Why the ack and not the serve: the pane can dispose across the serialize + IPC round trip,
+  // so the drop latch stays armed until the restored bytes are actually painted (#15504).
+  ipcMain.removeAllListeners('pty:hiddenOutputRestoreApplied')
+  ipcMain.on(
+    'pty:hiddenOutputRestoreApplied',
+    (_event, args: { id?: unknown; hiddenDropEpisode?: unknown }) => {
+      if (typeof args?.id !== 'string' || !args.id) {
+        return
+      }
+      const episode =
+        typeof args.hiddenDropEpisode === 'number' ? args.hiddenDropEpisode : undefined
+      consumeHiddenRendererPtyDropMemory(args.id, episode)
+    }
+  )
 
   // Why: renderer ACKs bound main→renderer delivery without stopping PTY ingestion — agent/status consumers still see every chunk via the provider/runtime path.
   ipcMain.removeAllListeners('pty:ackData')
@@ -245,12 +261,6 @@ export function installPtyResizeVisibilityIpc(session: PtyIpcSession): void {
       const pending = session.pendingData.get(args.id)
       if (pending && transition.droppable) {
         session.pendingData.delete(args.id)
-        if (pending.projectionAdmissionIds) {
-          session.sshOutputIntake?.transferProjections(
-            pending.projectionAdmissionIds,
-            'hidden-drop'
-          )
-        }
         session.updateProducerFlowControl(args.id)
         session.pendingOverflowMarkedPtys.delete(args.id)
         const drop = recordHiddenRendererPtyDataDrop(args.id, pending.data.length)
@@ -259,7 +269,8 @@ export function installPtyResizeVisibilityIpc(session: PtyIpcSession): void {
             session,
             args.id,
             'hidden-drop',
-            runtime?.getPtyOutputSequence(args.id)
+            runtime?.getPtyOutputSequence(args.id),
+            drop.hiddenDropEpisode
           )
         }
       }
@@ -279,19 +290,13 @@ export function installPtyResizeVisibilityIpc(session: PtyIpcSession): void {
         session,
         args.id,
         'unhide',
-        runtime?.getPtyOutputSequence(args.id)
+        runtime?.getPtyOutputSequence(args.id),
+        transition.hiddenDropEpisode
       )
     }
   })
 
-  ipcMain.removeAllListeners('pty:terminalViewAttributes')
-  ipcMain.on('pty:terminalViewAttributes', (_event, args: unknown) => {
-    // Why validate-or-drop: a malformed palette gives a wrong color reply that breaks TUI theme detection worse than the silent-until-first-push default.
-    const attributes = validateTerminalViewAttributes(args)
-    if (attributes) {
-      setTerminalViewAttributes(attributes)
-    }
-  })
+  installTerminalViewAttributesIpc(session)
 
   ipcMain.removeAllListeners('pty:setPtyDeliveryInterest')
   ipcMain.on('pty:setPtyDeliveryInterest', (_event, args: { id: string; interested: boolean }) => {

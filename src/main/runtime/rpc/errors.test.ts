@@ -20,6 +20,7 @@ import {
   agentSessionRefusalError,
   refuseUnclassified
 } from '../../../shared/agent-session-wire-refusals'
+import { readAgentSessionErrorRefusal } from '../../../shared/agent-session-write-failure'
 
 class LineageError extends Error {
   code = 'LINEAGE_PARENT_NOT_FOUND'
@@ -29,6 +30,26 @@ class LineageError extends Error {
 }
 
 describe('mapRuntimeError', () => {
+  it('names a deferred fork with its own code and reason', () => {
+    expect(
+      mapRuntimeError(
+        'req_1',
+        { runtimeId: 'runtime-1' },
+        new Error('terminal_spawn_deferred:paused')
+      )
+    ).toMatchObject({
+      ok: false,
+      error: {
+        code: 'terminal_spawn_deferred',
+        message: 'terminal_spawn_deferred:paused',
+        data: { reason: 'paused' }
+      }
+    })
+    expect(
+      mapRuntimeError('req_1', { runtimeId: 'runtime-1' }, new Error('terminal_spawn_deferred:x'))
+    ).toMatchObject({ error: { code: 'runtime_error' } })
+  })
+
   it('preserves the stable skill failure category and retryability across RPC', () => {
     expect(
       mapRuntimeError(
@@ -353,6 +374,34 @@ describe('thrown agent-session refusals', () => {
       code: 'agent_session_conflict',
       message: 'agent_session_conflict',
       data: { refusal: { code: 'agent_session_conflict' } }
+    })
+  })
+
+  // The shape every client test of a thrown refusal feeds in, pinned to what this produces.
+  it("sends a journal refusal's reason where a client reads it", () => {
+    const response = mapRuntimeError(
+      'req_1',
+      meta,
+      agentSessionRefusalError(
+        'agent_session_journal_unreadable',
+        { reason: 'journalCorrupt' },
+        'Unable to load this chat.'
+      )
+    )
+    const wire = JSON.parse(JSON.stringify(response.error))
+    expect(wire).toEqual({
+      code: 'runtime_error',
+      message: 'agent_session_journal_unreadable',
+      data: {
+        refusal: {
+          code: 'agent_session_journal_unreadable',
+          details: { reason: 'journalCorrupt' }
+        }
+      }
+    })
+    expect(readAgentSessionErrorRefusal(wire)).toEqual({
+      code: 'agent_session_journal_unreadable',
+      details: { reason: 'journalCorrupt' }
     })
   })
 

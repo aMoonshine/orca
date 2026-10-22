@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
 import { resolveWorktreeOperationRouteResult } from '@/lib/worktree-operation-route'
-import type { RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
+import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 import type { TabAgentLaunchOption } from '../tab-bar/tab-agent-launch-options'
 import { AgentGroupDialog } from './AgentGroupDialog'
 

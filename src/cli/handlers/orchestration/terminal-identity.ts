@@ -7,11 +7,12 @@ import {
   injectedSessionAddress,
   readInjectedAgentSessionId
 } from '../../../shared/agent-session-caller-env'
+import { sessionAddressForHost } from '../../session-caller-flags'
 
 /**
  * The caller's terminal handle, or `undefined` when an injected agent session id names the caller:
  * the orchestration envelope carries that id and the host binds the caller param to it, so nothing
- * is resolved or guessed here.
+ * is resolved or guessed here, except a session address only the host can place.
  */
 export async function resolveOrchestrationTerminalHandle(
   flags: Map<string, string | boolean>,
@@ -21,10 +22,11 @@ export async function resolveOrchestrationTerminalHandle(
   options: { validateEnvHandle?: boolean } = {}
 ): Promise<string | undefined> {
   // A caller flag naming anyone else was already refused at the CLI entry, from the command's spec.
-  if (readInjectedAgentSessionId()) {
-    return undefined
-  }
   const explicit = getOptionalStringFlag(flags, flagName)
+  const sessionId = readInjectedAgentSessionId()
+  if (sessionId) {
+    return explicit ? sessionAddressForHost(explicit, sessionId) : undefined
+  }
   if (explicit) {
     return explicit
   }
@@ -175,6 +177,16 @@ export function orchestrationCallerLabel(handle: string | undefined): string {
   return handle ?? injectedSessionAddress() ?? 'unknown'
 }
 
+/**
+ * The caller for a read that `--run` scopes: no terminal is resolved, but a session's declared
+ * address still goes to the host, which places a `/clear` root and refuses anyone else.
+ */
+export function runScopedSessionCaller(flags: Map<string, string | boolean>): string | undefined {
+  const declared = getOptionalStringFlag(flags, 'from')
+  const sessionId = readInjectedAgentSessionId()
+  return declared && sessionId ? sessionAddressForHost(declared, sessionId) : undefined
+}
+
 export async function resolveCoordinatorTerminalHandle(
   flags: Map<string, string | boolean>,
   cwd: string,
@@ -224,6 +236,18 @@ export function throwNoActiveSenderTerminal(): never {
   // to re-run under a live one.
   if (hasStructuredSessionMarker() && !process.env.ORCA_TERMINAL_HANDLE) {
     throw structuredSessionRefusal('from')
+  }
+  // Why: Codex sets CODEX_THREAD_ID after its env filter, which is what drops Orca's (#25775).
+  if (process.env.CODEX_THREAD_ID && !process.env.ORCA_TERMINAL_HANDLE) {
+    throw new RuntimeClientError(
+      'no_active_sender_terminal',
+      'Codex ran this orchestration command without ORCA_TERMINAL_HANDLE. If Codex was started in ' +
+        'an Orca terminal, its shell_environment_policy removed it, and relaunching the same way ' +
+        'will not restore it. Start Codex by typing `codex` in an Orca terminal, or set ' +
+        'inherit = "all" with include_only listing the variables to keep plus "ORCA_*". ' +
+        "Pass --from only with your own terminal's handle — another pane's handle would act on " +
+        'its mailbox.'
+    )
   }
   throw new RuntimeClientError(
     'no_active_sender_terminal',

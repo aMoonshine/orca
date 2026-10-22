@@ -16,22 +16,15 @@ import {
   type CodexSettingsPromotionHomes,
   type CodexSettingsPromotionPlan
 } from './config-settings-promotion'
-import { readCodexSettingsBaseline } from './config-settings-baseline'
+import { observeCodexSettingsBaseline, readCodexSettingsBaseline } from './config-settings-baseline'
 import { getCodexConfigSyncStatus, reportCodexConfigSyncOutcome } from './config-sync-stall'
 import { preserveRuntimeConflictValues } from './codex-config-settings-preservation'
 import { applyCodexDaemonSocketGuard } from './codex-daemon-socket-path-guard'
-import {
-  deduplicateProjectTomlSections,
-  getMcpServerTomlSectionName,
-  getProjectTrustLevel,
-  getRevocationTomlSectionHeaderKey,
-  getTomlSectionHeaderKey,
-  getTomlSections,
-  isRuntimePreservedTomlSection,
-  isRuntimeProjectTomlSection,
-  joinTomlBlocks,
-  stripRuntimeOwnedTomlSections
-} from './config-toml-runtime-owned-sections'
+import { stripRuntimeOwnedTomlSections } from './config-toml-runtime-owned-sections'
+import { mergeSystemCodexConfigIntoRuntime } from './codex-config-mirror-merge'
+
+// Why: the runtime copy is Orca-owned and mirrors `mcp_servers` env tokens, so every rewrite is owner-only.
+const RUNTIME_CONFIG_WRITE = { mode: 0o600 } as const
 
 export function syncSystemConfigIntoManagedCodexHome(
   homes: CodexSettingsPromotionHomes = {
@@ -136,7 +129,12 @@ export function ensureCodexDaemonSocketGuard(runtimeHomePath: string): void {
 function writeCodexDaemonSocketGuard(runtimeHomePath: string, runtimeConfig: string | null): void {
   const guarded = applyCodexDaemonSocketGuard(runtimeConfig ?? '', runtimeHomePath)
   if (guarded !== (runtimeConfig ?? '')) {
-    writeFileAtomicallyIfUnchanged(join(runtimeHomePath, 'config.toml'), runtimeConfig, guarded)
+    writeFileAtomicallyIfUnchanged(
+      join(runtimeHomePath, 'config.toml'),
+      runtimeConfig,
+      guarded,
+      RUNTIME_CONFIG_WRITE
+    )
   }
 }
 
@@ -171,14 +169,13 @@ export function syncSystemConfigIntoLegacySharedCodexHome(
   let mirroredRuntimeConfig = runtimeConfigBeforeMirror ?? ''
   if (rawSystemConfig.trim() !== '') {
     const sourceConfigDir = resolveCodexConfigMirrorSourceDirectory(homes.systemHomePath)
-    // The retired home has no ownership baseline; its entire MCP root stays canonical.
     mirroredRuntimeConfig =
       runtimeConfigBeforeMirror !== null
         ? mergeSystemCodexConfigIntoRuntime(
             runtimeConfigBeforeMirror,
             prepareSystemConfigForRuntimeMirror(rawSystemConfig, sourceConfigDir),
-            new Set(),
-            true
+            sourceConfigDir,
+            ...readLegacySharedHomeMcpOwnership(homes.runtimeHomePath)
           )
         : prepareSystemConfigForFreshRuntimeMirror(rawSystemConfig, sourceConfigDir)
   }
@@ -192,7 +189,30 @@ export function syncSystemConfigIntoLegacySharedCodexHome(
   }
   // Why: stage first, then compare immediately before replace so a retained
   // Codex trust write during mirror preparation wins.
-  writeFileAtomicallyIfUnchanged(runtimeConfigPath, runtimeConfigBeforeMirror, nextRuntimeConfig)
+  writeFileAtomicallyIfUnchanged(
+    runtimeConfigPath,
+    runtimeConfigBeforeMirror,
+    nextRuntimeConfig,
+    RUNTIME_CONFIG_WRITE
+  )
+}
+
+/**
+ * Why: MCP servers added from an Orca terminal exist only in the retired home,
+ * so its last mirror's baseline decides which ones ~/.codex owns. With no
+ * baseline the whole root stays canonical, as before; an unreadable one throws
+ * rather than guess. Read-only: this one-way refresh never advances it.
+ */
+function readLegacySharedHomeMcpOwnership(
+  runtimeHomePath: string
+): [mirroredMcpServerNames: ReadonlySet<string>, mirroredMcpServerRoot: boolean] {
+  const observation = observeCodexSettingsBaseline(runtimeHomePath)
+  if (observation.kind === 'indeterminate') {
+    throw new Error('Codex settings baseline could not be read')
+  }
+  return observation.kind === 'present'
+    ? [observation.baseline.mcpServers, observation.baseline.mcpServerRoot]
+    : [new Set(), true]
 }
 
 type CodexConfigMirrorResult =
@@ -252,7 +272,7 @@ function syncSystemConfigIntoManagedCodexHomeUnsafe(
       runtimeHomePath
     )
     const ownership = readMcpServerTomlOwnership(freshRuntimeConfig)
-    writeFileAtomically(runtimeConfigPath, freshRuntimeConfig)
+    writeFileAtomically(runtimeConfigPath, freshRuntimeConfig, RUNTIME_CONFIG_WRITE)
     return {
       status: 'mirrored',
       preservedConflictKeys: new Set(),
@@ -271,6 +291,7 @@ function syncSystemConfigIntoManagedCodexHomeUnsafe(
     mergeSystemCodexConfigIntoRuntime(
       runtimeConfig,
       systemConfig,
+      sourceConfigDir,
       promotionPlan.mirroredMcpServers,
       promotionPlan.mirroredMcpServerRoot
     ),
@@ -278,7 +299,7 @@ function syncSystemConfigIntoManagedCodexHomeUnsafe(
   )
   const nextRuntimeConfig = applyCodexDaemonSocketGuard(preserved.content, runtimeHomePath)
   if (nextRuntimeConfig !== runtimeConfig) {
-    writeFileAtomically(runtimeConfigPath, nextRuntimeConfig)
+    writeFileAtomically(runtimeConfigPath, nextRuntimeConfig, RUNTIME_CONFIG_WRITE)
   }
   return {
     status: 'mirrored',
@@ -306,72 +327,16 @@ function prepareSystemConfigForRuntimeMirror(config: string, systemConfigDir: st
   )
 }
 
-// Why: trust blocks reference a hooks.json path, so system-home hook trust
-// entries are not valid in a fresh runtime CODEX_HOME until install remaps
-// them. Also seeds WSL runtime homes, where systemConfigDir must be the
-// Linux-side ~/.codex the config resolves against inside the distro.
+// Why: install re-keys ~/.codex user-hook trust; plugin and project hook trust carries as-is.
+// Also seeds WSL runtime homes, where systemConfigDir must be the Linux-side
+// ~/.codex the config resolves against inside the distro.
 export function prepareSystemConfigForFreshRuntimeMirror(
   config: string,
   systemConfigDir: string
 ): string {
-  return stripRuntimeOwnedTomlSections(prepareSystemConfigForRuntimeMirror(config, systemConfigDir))
-}
-
-function mergeSystemCodexConfigIntoRuntime(
-  runtimeConfig: string,
-  systemConfig: string,
-  mirroredMcpServerNames: ReadonlySet<string> = new Set(),
-  mirroredMcpServerRoot = false
-): string {
-  const runtimeSections = deduplicateProjectTomlSections(getTomlSections(runtimeConfig))
-  const runtimeProjectHeaders = new Set(
-    runtimeSections
-      .filter((section) => isRuntimeProjectTomlSection(section.header))
-      .map((section) => getTomlSectionHeaderKey(section.header))
+  return stripRuntimeOwnedTomlSections(
+    prepareSystemConfigForRuntimeMirror(config, systemConfigDir),
+    new Set(),
+    { systemHomeDir: systemConfigDir, runtimeHookTrustKeys: new Set() }
   )
-  const systemProjectSections = deduplicateProjectTomlSections(
-    getTomlSections(systemConfig)
-  ).filter((section) => isRuntimeProjectTomlSection(section.header))
-  const systemUntrustedProjectHeaders = new Set(
-    systemProjectSections
-      .filter((section) => getProjectTrustLevel(section.block) === 'untrusted')
-      .map((section) => getRevocationTomlSectionHeaderKey(section.header))
-  )
-  // Why: an exact-cased trusted entry in ~/.codex is the user's latest explicit
-  // decision for that exact project; a loosely-matched (case-drifted) revocation
-  // must not override it, or re-granting trust would be reverted every mirror.
-  const systemTrustedProjectHeaders = new Set(
-    systemProjectSections
-      .filter((section) => getProjectTrustLevel(section.block) === 'trusted')
-      .map((section) => getTomlSectionHeaderKey(section.header))
-  )
-  const systemMcpServers = readMcpServerTomlOwnership(systemConfig)
-  // Why: ordinary Codex settings should mirror ~/.codex exactly; runtime hook
-  // trust and project trust are written under Orca's managed CODEX_HOME and
-  // must survive the copy unless the user explicitly revoked project trust in
-  // the system config.
-  return joinTomlBlocks([
-    stripRuntimeOwnedTomlSections(systemConfig, runtimeProjectHeaders),
-    ...runtimeSections
-      .filter((section) => {
-        if (isRuntimePreservedTomlSection(section.header)) {
-          return true
-        }
-        const mcpServerName = getMcpServerTomlSectionName(section.header)
-        return (
-          mcpServerName !== null &&
-          !systemMcpServers.ownsRoot &&
-          !mirroredMcpServerRoot &&
-          !systemMcpServers.names.has(mcpServerName) &&
-          !mirroredMcpServerNames.has(mcpServerName)
-        )
-      })
-      .filter(
-        (section) =>
-          !isRuntimeProjectTomlSection(section.header) ||
-          !systemUntrustedProjectHeaders.has(getRevocationTomlSectionHeaderKey(section.header)) ||
-          systemTrustedProjectHeaders.has(getTomlSectionHeaderKey(section.header))
-      )
-      .map((section) => section.block)
-  ])
 }

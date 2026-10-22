@@ -56,10 +56,16 @@ export function notifyTerminalSurfaceTap(
   }
   const clickInput = buildMouseClickInput(scope, originX, originY)
   if (clickInput) {
-    notify(scope, { type: 'terminal-input', bytes: clickInput })
+    // A cursor-moving click must follow the live field's pending text.
+    notify(scope, { type: 'terminal-input', bytes: clickInput, click: true })
   }
   // Touch still needs native input focus after the TUI consumes its mouse click.
-  if (focusKeyboard || !isClickMouseTrackingMode(getMouseTrackingMode(scope))) {
+  // A click with an unproven encoding reached no program, so it acts as a plain tap.
+  if (
+    focusKeyboard ||
+    !isClickMouseTrackingMode(getMouseTrackingMode(scope)) ||
+    !scope.mouseEncodingKnown
+  ) {
     notify(scope, { type: 'terminal-tap' })
   }
 }

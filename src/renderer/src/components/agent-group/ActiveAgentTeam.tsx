@@ -3,7 +3,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/store'
 import { resolveWorktreeOperationRouteResult } from '@/lib/worktree-operation-route'
 import { useAgentTeam } from '@/lib/use-agent-team'
-import type { RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
+import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 import { AgentTeamBoard } from './AgentTeamBoard'
 
 function Monitor({ target, worktreeId }: { target: RuntimeClientTarget; worktreeId: string }) {

@@ -1,3 +1,4 @@
+import { newAgentLaunchRequestId } from '@/lib/agent-launch-request-id'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -43,6 +44,7 @@ export function EngineeringWorkflow({
     setError(null)
     try {
       const result = launchAgentInNewTab({
+        requestId: newAgentLaunchRequestId(),
         agent,
         worktreeId,
         prompt: buildEngineeringPrompt(workflow, objective),

@@ -28,6 +28,7 @@ function cancelBoundDispatchWaiters(
 export const ORCHESTRATION_RUN_METHODS = [
   defineMethod({
     name: 'orchestration.runCreate',
+    permission: 'workspace',
     params: RunCreateParams,
     handler: (params, { orchestrationCompatibilityEvidence, orchestrationCaller, runtime }) => {
       const caller = resolveOrchestrationCaller(runtime, {
@@ -55,6 +56,7 @@ export const ORCHESTRATION_RUN_METHODS = [
   }),
   defineMethod({
     name: 'orchestration.runUse',
+    permission: 'workspace',
     params: RunUseParams,
     handler: (
       params,
@@ -113,6 +115,7 @@ export const ORCHESTRATION_RUN_METHODS = [
   }),
   defineMethod({
     name: 'orchestration.runCurrent',
+    permission: 'workspace',
     params: RunCurrentParams,
     handler: (params, { orchestrationCompatibilityEvidence, orchestrationCaller, runtime }) => {
       const caller = resolveOrchestrationCaller(runtime, {
@@ -127,6 +130,7 @@ export const ORCHESTRATION_RUN_METHODS = [
   }),
   defineMethod({
     name: 'orchestration.runList',
+    permission: 'workspace',
     params: RunListParams,
     handler: (params, { runtime }) => {
       const listed = runtime.getOrchestrationDb().listRuns(params)
@@ -135,6 +139,7 @@ export const ORCHESTRATION_RUN_METHODS = [
   }),
   defineMethod({
     name: 'orchestration.runShow',
+    permission: 'workspace',
     params: RunShowParams,
     handler: (params, { runtime }) => {
       const run = runtime.getOrchestrationDb().getRun(params.id)

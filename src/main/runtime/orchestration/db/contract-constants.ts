@@ -22,4 +22,5 @@ export const CURRENT_CONTRACT_VERSION = ORCHESTRATION_CONTRACT_VERSION
 // v43: per-path worker file claims.
 // v44: standing decision contracts for multi-agent modes.
 // v45: work mode and phase on a Run.
-export const SCHEMA_VERSION = 45
+// v46: upstream session address migration for both fork and upstream databases.
+export const SCHEMA_VERSION = 46

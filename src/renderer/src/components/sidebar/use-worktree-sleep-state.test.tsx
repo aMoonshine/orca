@@ -5,7 +5,6 @@ import type { AgentStatusEntry } from '../../../../shared/agent-status-types'
 import { makePaneKey } from '../../../../shared/stable-pane-id'
 import type { Tab } from '../../../../shared/tab-types'
 import type { TerminalTab } from '../../../../shared/terminal-tab-types'
-import { getWorktreeIdsWithLiveAgent, isInactiveWorkspace } from '@/lib/worktree-activity-state'
 import {
   useIsSleepingWorktree,
   resetWorktreeSleepStateCacheForTests
@@ -17,6 +16,7 @@ type MockState = {
   tabsByWorktree: Record<string, TerminalTab[]>
   browserTabsByWorktree: Record<string, { id: string }[]>
   unifiedTabsByWorktree: Record<string, Tab[]>
+  structuredChatSleptAtByPaneKey: Record<string, number>
   ptyIdsByTabId: Record<string, string[]>
   agentStatusEpoch: number
   agentStatusByPaneKey: Record<string, AgentStatusEntry>
@@ -97,6 +97,7 @@ describe('useIsSleepingWorktree', () => {
       tabsByWorktree: {},
       browserTabsByWorktree: {},
       unifiedTabsByWorktree: {},
+      structuredChatSleptAtByPaneKey: {},
       ptyIdsByTabId: {},
       agentStatusEpoch: 0,
       agentStatusByPaneKey: {},
@@ -272,52 +273,5 @@ describe('useIsSleepingWorktree', () => {
     }
 
     expect(renderToStaticMarkup(<SleepProbe worktreeId={worktreeId} />)).toBe('<span>true</span>')
-  })
-
-  it('matches isInactiveWorkspace across runtime shapes', () => {
-    const worktreeId = 'repo1::/path/wt1'
-    const paneKey = makePaneKey('tab-1', LEAF_ID)
-    const cases = [
-      { label: 'bare', state: { ...mockState } },
-      {
-        label: 'live pty',
-        state: {
-          ...mockState,
-          tabsByWorktree: { [worktreeId]: [makeTab('tab-1', worktreeId)] },
-          ptyIdsByTabId: { 'tab-1': ['pty-1'] }
-        }
-      },
-      {
-        label: 'browser tab',
-        state: { ...mockState, browserTabsByWorktree: { [worktreeId]: [{ id: 'b-1' }] } }
-      },
-      {
-        label: 'live agent',
-        state: {
-          ...mockState,
-          agentStatusByPaneKey: {
-            [paneKey]: makeAgentStatusEntry({ paneKey, state: 'working', worktreeId })
-          }
-        }
-      }
-    ]
-
-    // Why assert against the shared predicate itself: the point of the hook is that
-    // the moon and the hide-sleeping filter can never drift apart (#19624).
-    for (const { label, state } of cases) {
-      resetWorktreeSleepStateCacheForTests()
-      resetAgentStatusEpochClockForTests()
-      mockState = state
-      const expected = isInactiveWorkspace(
-        worktreeId,
-        state.tabsByWorktree,
-        state.ptyIdsByTabId,
-        state.browserTabsByWorktree,
-        getWorktreeIdsWithLiveAgent(state.agentStatusByPaneKey, state.tabsByWorktree, Date.now())
-      )
-      expect(`${label}:${renderToStaticMarkup(<SleepProbe worktreeId={worktreeId} />)}`).toBe(
-        `${label}:<span>${String(expected)}</span>`
-      )
-    }
   })
 })

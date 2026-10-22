@@ -11,7 +11,8 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import { callRuntimeRpc, type RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
+import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
+import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 import { getAgentSessionOptionCatalog } from '../../../../shared/agent-session-option-catalog'
 import type { GroupWorker } from '@/lib/agent-group-launch'
 import { translate } from '@/i18n/i18n'

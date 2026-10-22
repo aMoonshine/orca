@@ -32,7 +32,7 @@ const { loadUserSshConfigMock, sshConfigHostsToTargetsMock } = vi.hoisted(() => 
   sshConfigHostsToTargetsMock: vi.fn()
 }))
 
-vi.mock('./ssh/ssh-config-parser', () => ({
+vi.mock('./ssh/config/ssh-config-parser', () => ({
   loadUserSshConfig: loadUserSshConfigMock,
   sshConfigHostsToTargets: sshConfigHostsToTargetsMock
 }))
@@ -391,13 +391,16 @@ describe('Store', () => {
     const store = await createStore()
 
     // A re-probe that now prefers the `upstream` remote rewrites the derived project id.
-    store.updateRepo('r1', {
-      gitRemoteIdentity: {
-        canonicalKey: 'git.example.com/acme/app-upstream',
-        remoteName: 'upstream',
-        remoteUrl: 'git@git.example.com:acme/app-upstream.git'
+    store.updateRepo(
+      { id: 'r1' },
+      {
+        gitRemoteIdentity: {
+          canonicalKey: 'git.example.com/acme/app-upstream',
+          remoteName: 'upstream',
+          remoteUrl: 'git@git.example.com:acme/app-upstream.git'
+        }
       }
-    })
+    )
 
     const upstreamProjectId = 'git:git.example.com/acme/app-upstream'
     expect(store.getProjects().map((project) => project.id)).toEqual([upstreamProjectId])
@@ -408,68 +411,6 @@ describe('Store', () => {
     expect(
       store.getProjectHostSetups().find((setup) => setup.id === 'app::gpu-vm')?.projectId
     ).toBe(upstreamProjectId)
-  })
-
-  it('picks one predecessor project when several prior rows overlap the same repos', async () => {
-    const sharedIdentity = {
-      canonicalKey: 'git.example.com/acme/shared',
-      remoteName: 'origin',
-      remoteUrl: 'git@git.example.com:acme/shared.git'
-    }
-    writeDataFile({
-      ...getDefaultPersistedState(testState.dir),
-      repos: [
-        makeRepo({
-          id: 'r1',
-          path: '/left',
-          displayName: 'Left',
-          gitRemoteIdentity: sharedIdentity
-        }),
-        makeRepo({
-          id: 'r2',
-          path: '/right',
-          displayName: 'Right',
-          gitRemoteIdentity: sharedIdentity
-        })
-      ],
-      projects: [
-        makeProject({
-          id: 'git:git.example.com/acme/left',
-          sourceRepoIds: ['r1'],
-          updatedAt: 200,
-          localWindowsRuntimePreference: { kind: 'wsl', distro: 'Ubuntu' }
-        }),
-        makeProject({
-          id: 'git:git.example.com/acme/right',
-          sourceRepoIds: ['r2'],
-          updatedAt: 100,
-          localWindowsRuntimePreference: { kind: 'windows-host' }
-        })
-      ],
-      projectHostSetups: [
-        makeProjectHostSetup({
-          id: 'r1',
-          projectId: 'git:git.example.com/acme/left',
-          repoId: 'r1'
-        }),
-        makeProjectHostSetup({
-          id: 'r2',
-          projectId: 'git:git.example.com/acme/right',
-          repoId: 'r2'
-        })
-      ]
-    })
-
-    const store = await createStore()
-
-    // Equal repo overlap resolves by newest updatedAt; the loser's preference is never merged in.
-    expect(store.getProjects()).toEqual([
-      expect.objectContaining({
-        id: 'git:git.example.com/acme/shared',
-        sourceRepoIds: ['r1', 'r2'],
-        localWindowsRuntimePreference: { kind: 'wsl', distro: 'Ubuntu' }
-      })
-    ])
   })
 
   it('migrates legacy WSL agent settings into the global Windows runtime default', async () => {

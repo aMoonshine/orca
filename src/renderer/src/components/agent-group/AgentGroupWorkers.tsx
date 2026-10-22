@@ -13,7 +13,7 @@ import { translate } from '@/i18n/i18n'
 import type { GroupWorker } from '@/lib/agent-group-launch'
 import type { TabAgentLaunchOption } from '../tab-bar/tab-agent-launch-options'
 import { AgentGroupModel } from './AgentGroupModel'
-import type { RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
+import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 
 export function AgentGroupWorkers({
   workers,

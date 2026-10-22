@@ -1,32 +1,43 @@
 import type { OrchestrationDb } from '../orchestration-db'
 
+// Frozen literals, never the live prefix constant: a migration rewrites what that build wrote.
+const LEGACY_PREFIX = 'session:'
+const CURRENT_PREFIX = 'orca_session_id:'
+
+// Every column an earlier build wrote a session's mail address into. Bodies, subjects and payloads
+// are text, not addresses, and are left as written.
+const ADDRESS_COLUMNS = [
+  ['messages', 'from_handle'],
+  ['messages', 'to_handle'],
+  ['coordinator_runs', 'coordinator_handle']
+] as const
+
+// Address columns in a key: where the current spelling already has its row, the legacy one is a duplicate.
+const KEYED_ADDRESS_COLUMNS = [
+  ['run_coordinator_handles', 'terminal_handle'],
+  ['structured_pointer_operations', 'mailbox_handle']
+] as const
+
 /**
- * Per-path edit ownership for workers sharing a workspace.
- *
- * Why a migration and not only `createTables`: `CREATE TABLE IF NOT EXISTS` does
- * nothing for a database opened at an earlier version, so without this step an
- * existing profile has no `worker_file_claims` and every claim fails as "no such
- * table" while a fresh install works. The v42 precedent applies - the createTables
- * SQL is guarded because it runs first on every open and already gives a fresh
- * database this table.
+ * Earlier builds addressed an Orca session as `session:<id>`. Respells every stored one as
+ * `orca_session_id:<id>`, so a chat still reads mail sent before the upgrade, a Run still routes
+ * mail to the chat that coordinated it, and a reply to old mail reaches its sender.
  */
 export function migrateV43(this: OrchestrationDb, current: number): void {
   if (current >= 43) {
     return
   }
-  this.db.exec(`
-    CREATE TABLE IF NOT EXISTS worker_file_claims (
-      run_id        TEXT NOT NULL,
-      workspace_id  TEXT NOT NULL,
-      claim_key     TEXT NOT NULL,
-      display_path  TEXT NOT NULL,
-      dispatch_id   TEXT NOT NULL,
-      claimed_at    TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (run_id, workspace_id, claim_key)
-    );
-    CREATE INDEX IF NOT EXISTS idx_worker_file_claims_dispatch
-      ON worker_file_claims(dispatch_id);
-    CREATE INDEX IF NOT EXISTS idx_worker_file_claims_scope
-      ON worker_file_claims(run_id, workspace_id);
-  `)
+  const isLegacy = (column: string): string =>
+    `substr(${column}, 1, ${LEGACY_PREFIX.length}) = '${LEGACY_PREFIX}'`
+  const respelled = (column: string): string =>
+    `'${CURRENT_PREFIX}' || substr(${column}, ${LEGACY_PREFIX.length + 1})`
+  for (const [table, column] of ADDRESS_COLUMNS) {
+    this.db.exec(`UPDATE ${table} SET ${column} = ${respelled(column)} WHERE ${isLegacy(column)}`)
+  }
+  for (const [table, column] of KEYED_ADDRESS_COLUMNS) {
+    this.db.exec(`
+      UPDATE OR IGNORE ${table} SET ${column} = ${respelled(column)} WHERE ${isLegacy(column)};
+      DELETE FROM ${table} WHERE ${isLegacy(column)};
+    `)
+  }
 }

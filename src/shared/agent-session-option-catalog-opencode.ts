@@ -1,17 +1,22 @@
-import { hasFlag } from './agent-cli-flag-detection'
+import { parseOpenCodeModels } from './opencode-model-list'
 import { removeAgentArgOption } from './agent-session-option-agent-args'
 import type { AgentSessionOptionCatalog } from './agent-session-option-catalog-types'
-import { parseOpenCodeModels } from './opencode-model-list'
 
-export const OPENCODE_SESSION_OPTION_CATALOG: AgentSessionOptionCatalog = {
-  models: [],
+const MODEL_FLAGS = ['-m', '--model'] as const
+
+// Why: worker-start needs launch serialization without exposing a new Native Chat option surface.
+export const OPENCODE_LAUNCH_OPTION_CATALOG: AgentSessionOptionCatalog = {
   supportsWorkerLaunchPreferences: true,
-  discoveredModelsAreAuthoritative: true,
+  models: [],
   modelApply: {
     launchArgs: (value) => ['--model', String(value)],
-    agentArgsOverride: (tokens) => hasFlag(tokens, ['-m', '--model']),
-    removeAgentArgs: (tokens) => removeAgentArgOption(tokens, ['-m', '--model'])
-  },
+    removeAgentArgs: (tokens) => removeAgentArgOption('opencode', tokens, MODEL_FLAGS)
+  }
+}
+
+export const OPENCODE_SESSION_OPTION_CATALOG: AgentSessionOptionCatalog = {
+  ...OPENCODE_LAUNCH_OPTION_CATALOG,
+  discoveredModelsAreAuthoritative: true,
   listModels: {
     command: 'opencode models',
     parse: (stdout) => parseOpenCodeModels(stdout).map((model) => ({ ...model, options: [] }))

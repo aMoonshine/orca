@@ -78,6 +78,8 @@ export type TerminalDocumentState = {
   lastEmittedModes: TerminalDocumentModes
   /** `terminal-init`: whether the terminal has ever reached ready. */
   everReady: boolean
+  /** `mouse-mode-decset-scan`: whether the encoding is proven (1006/1016 set or reset, RIS, or a live tracking enable). */
+  mouseEncodingKnown: boolean
   /** `mouse-mode-decset-scan`: the tail of the last chunk, in case a DECSET straddles two writes. */
   mouseModeScanTail: string
   /** `mouse-mode-decset-scan`: the mouse tracking mode the TUI last asked for. */
@@ -154,6 +156,8 @@ export type TerminalDocumentState = {
   longPressOrigin: TerminalDocumentTouchOrigin | null
   /** `selection-overlay`: the touch that may still resolve as a tap. */
   tapCandidate: TerminalDocumentTapCandidate | null
+  /** `bottom-row-backdrop`: the fill last painted under the grid, so an unchanged one is not rewritten. */
+  bottomRowBackdrop: string
   /** `surface-swap`: the element xterm is currently mounted on. */
   surface: HTMLElement | null
   /** `surface-swap`: the terminal of a hidden replacement surface that has not committed. */
@@ -179,6 +183,8 @@ export type TerminalDocumentState = {
   uninstallErrorReporter: (() => void) | null
   /** `message-bridge`: undoes the host transport's install, or null before one. */
   uninstallHostTransport: (() => void) | null
+  /** `message-bridge`: cancels the bounded font wait and late repaint after disposal. */
+  cancelFontReadiness: (() => void) | null
   /** `fit-scale`: takes the viewport refit's listener off again, or null before one. */
   removeViewportRefit: (() => void) | null
   /** `tap-dispatch`: takes its four document listeners off again, or null before them. */
@@ -262,6 +268,7 @@ function createTerminalDocumentState(): TerminalDocumentState {
       sgrMousePixelsMode: false
     },
     everReady: false,
+    mouseEncodingKnown: false,
     mouseModeScanTail: '',
     trackedMouseTrackingMode: 'none',
     sgrMouseMode: false,
@@ -301,6 +308,7 @@ function createTerminalDocumentState(): TerminalDocumentState {
     longPressOrigin: null,
     tapCandidate: null,
     wheelAccumDeltaY: 0,
+    bottomRowBackdrop: '',
     surface: null,
     pendingTerm: null,
     committedTerm: null,
@@ -314,6 +322,7 @@ function createTerminalDocumentState(): TerminalDocumentState {
     nonFatalErrorNotifies: 0,
     uninstallErrorReporter: null,
     uninstallHostTransport: null,
+    cancelFontReadiness: null,
     removeViewportRefit: null,
     removeTapDispatch: null,
     removeWebglRecovery: null,

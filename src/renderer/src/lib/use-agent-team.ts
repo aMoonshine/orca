@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
-import { callRuntimeRpc, type RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
+import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
+import type { RuntimeClientTarget } from '../../../shared/runtime-client-target'
 import { readTeamSession, resolveTeamHandle, teamSessionKey } from './agent-team-session'
 import { showAgentGroupPanels } from './agent-group-panels'
 import type { GroupRun, GroupTask } from './agent-group-launch'
@@ -106,7 +107,9 @@ export function useAgentTeam(target: RuntimeClientTarget, worktreeId: string, ar
             })),
             true
           )
-          if (visible === handles.filter((handle) => !handle.startsWith('session:')).length) {
+          if (
+            visible === handles.filter((handle) => !handle.startsWith('orca_session_id:')).length
+          ) {
             signature = nextSignature
           }
         }

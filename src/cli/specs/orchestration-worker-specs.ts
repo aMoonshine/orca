@@ -37,7 +37,7 @@ export const ORCHESTRATION_WORKER_COMMAND_SPECS: CommandSpec[] = [
       'Current and existing worktrees never rerun setup; a fresh agent terminal is created unless --terminal is explicit.',
       'When reusing --terminal, pass --worktree for that terminal; current means the coordinator worktree.',
       '--agent takes an Orca agent id enabled on the worker server, such as claude, codex, cursor, antigravity, muse, zcode, opencode, or opencode2.',
-      '--model supports Claude, Codex, Cursor, Antigravity, Muse, and OpenCode provider model ids; OpenCode expects provider/model (CLI 1.18.34). --effort requires --model and provider support. Neither can combine with --terminal. Agents without launch-model support use their own config.',
+      '--model supports Claude, Codex, Cursor, Antigravity, and Muse opaque provider model ids; --effort requires --model. OMP accepts --model only; --effort is unsupported. Neither can combine with --terminal. OpenCode model selection requires an existing worktree, a verified execution-host CLI, and an available model; effort is unsupported. Other agents, including zcode, launch with the model from their own config.',
       'New worktrees use agent-first creation and default --setup to run. Repository start-immediately runs setup beside the agent; wait-for-setup gates agent readiness and task input.',
       'Creation flags (--name, --repo, --base-branch, --display-name, --comment, --setup) are rejected for current/existing worktrees. Use exact --repo on the selected server; project/host convenience routing remains on worktree create.',
       "How the worker runs follows the user's own setting for new agent tabs; there is no flag for it and no caller needs to ask. A dispatch the setting cannot apply to still starts, so the placement, agent, and launch options passed here are always the ones honoured.",
@@ -74,6 +74,7 @@ export const ORCHESTRATION_WORKER_COMMAND_SPECS: CommandSpec[] = [
   },
   {
     path: ['orchestration', 'worker-stop'],
+    destructive: true,
     summary: 'Fence one Dispatch and stop its supervised agent terminal',
     usage:
       'orca orchestration worker-stop --dispatch <dispatch_id> [--retry-request <id>] [--json]',
@@ -93,6 +94,7 @@ export const ORCHESTRATION_WORKER_COMMAND_SPECS: CommandSpec[] = [
   },
   {
     path: ['orchestration', 'worker-release'],
+    destructive: true,
     summary: 'Release the terminal of one settled supervised worker',
     usage:
       'orca orchestration worker-release --dispatch <dispatch_id> [--retry-request <id>] [--json]',

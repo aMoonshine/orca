@@ -11,37 +11,10 @@ import {
   isSubagentGroupFallbackText,
   subagentGroupFallbackText
 } from './native-chat-subagent-summary'
+import { subagentFallbackText } from './native-chat-subagent-items'
 import type { NativeChatMessage } from './native-chat-types'
-import { agentJournalItemSubagentId } from './agent-session-journal-producer'
-import {
-  nativeChatSubagentLabel,
-  nativeChatSubagentLabels
-} from './native-chat-subagent-attribution'
 
-/** Every message in one read, each tagged with who it speaks as. A subagent is
- *  named by the roster on the same page. */
-export function formatWorkerTranscriptMessages(messages: readonly NativeChatMessage[]): string[] {
-  const subagentLabels = nativeChatSubagentLabels(messages)
-  return messages.map((message) => formatWorkerTranscriptMessage(message, subagentLabels))
-}
-
-/** Who a line speaks as. A subagent's lines are tagged as its own, so a peer reading
- *  a worker's transcript never takes a subagent's words for the worker's. */
-function workerTranscriptSpeaker(
-  message: NativeChatMessage,
-  subagentLabels: ReadonlyMap<string, string> | undefined
-): string {
-  if (agentJournalItemSubagentId(message) === null) {
-    return message.role
-  }
-  const label = nativeChatSubagentLabel(subagentLabels, message)
-  return label === undefined ? `${message.role}, subagent` : `${message.role}, subagent ${label}`
-}
-
-function formatWorkerTranscriptMessage(
-  message: NativeChatMessage,
-  subagentLabels: ReadonlyMap<string, string>
-): string {
+export function formatWorkerTranscriptMessage(message: NativeChatMessage): string {
   // Every roster block is written beside a plain-text twin carrying the same
   // sentence, for clients that cannot draw the block. Text surfaces are those
   // clients, so they print the twin and drop the block. The renderer reaches the
@@ -72,12 +45,18 @@ function formatWorkerTranscriptMessage(
     if (block.type === 'subagent-group') {
       return standIns.get(index) ?? null
     }
+    if (block.type === 'subagent') {
+      // A subagent's own row is its block and its twin, nothing else.
+      return message.blocks.some((other) => other.type === 'text')
+        ? null
+        : `[subagents] ${subagentFallbackText(block)}`
+    }
     // The journal deliberately admits block types this build does not know, and
     // a newer remote host can send one over the wire. Degrade to a marker rather
     // than reading fields off a shape that has none.
     return '[unsupported block]'
   })
-  return `[${workerTranscriptSpeaker(message, subagentLabels)}] ${blocks.filter((line) => line !== null).join('\n')}`.trimEnd()
+  return `[${message.role}] ${blocks.filter((line) => line !== null).join('\n')}`.trimEnd()
 }
 
 /** For each roster block, the sentence it must print itself — absent when a twin

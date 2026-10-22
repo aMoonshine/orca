@@ -161,7 +161,7 @@ describe('Claude structured turn timing', () => {
         state: 'running',
         startedAt: 1_000,
         userItemId: USER_1_KEY,
-        options: { observedAt: 1_000 }
+        options: { observedAt: 1_000, turnScope: { kind: 'thread' } }
       }
     ])
   })
@@ -194,7 +194,7 @@ describe('Claude structured turn timing', () => {
       startedAt: 1_000,
       completedAt: 4_500,
       userItemId: USER_1_KEY,
-      options: {}
+      options: { turnScope: { kind: 'thread' } }
     })
     expect(state.items.at(-1)?.identity).toEqual(state.items[0]?.identity)
   })
@@ -256,6 +256,7 @@ describe('Claude structured turn timing', () => {
       {
         turnId: 'user-1',
         state: 'interrupted',
+        outcome: 'superseded',
         startedAt: 1_000,
         completedAt: 3_000,
         userItemId: USER_1_KEY
@@ -295,14 +296,13 @@ describe('Claude structured turn timing', () => {
       body: { kind: 'message', role: 'user', blocks: [{ type: 'text', text: 'ship it' }] },
       fence: 7
     })
-    await Promise.resolve()
+    await dispatch
     const connection = claude.connections[0]!
     connection.handlers.onMessage?.({
       ...connection.sent[0],
       uuid: 'turn-1',
       timestamp: '2001-01-01T00:00:00.000Z'
     })
-    await dispatch
     connection.handlers.onMessage?.({
       type: 'assistant',
       uuid: 'assistant-1',

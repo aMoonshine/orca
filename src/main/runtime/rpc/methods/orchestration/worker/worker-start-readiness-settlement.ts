@@ -5,6 +5,7 @@ import type { WorkerStartModeReceipt } from '../../orchestration-worker-start-mo
 import { deliverWorkerDispatchPreamble } from './deliver-worker-dispatch-preamble'
 import type { RunWorkMode } from '../../../../orchestration/db/runs/run-work-mode'
 import type { WorkerFileClaimOutcome } from './worker-start-file-claims'
+import { chatAssigneeSessionId } from '../../../../orchestration/chat-assignee'
 import type { OrchestrationWorkerLaunchReceipt } from './worker-launch-preferences'
 import {
   describeUnobservedWorkerTurnStart,
@@ -33,14 +34,18 @@ export async function deliverAndSettleWorkerStartReadiness(args: {
   structuredSession: Awaited<ReturnType<typeof createStructuredWorkerSessionForWorktree>> | null
   terminalHandle: string
   coordinatorHandle: string
-  dispatchCapability: string
   devMode: boolean | undefined
   requestId: string
   agent: string | null
+  /** The agent this start launched into `terminalHandle`; null when the caller supplied it. */
+  launchedAgent: string | null
   setupReceipt: WorkerSetupReceipt
   launchReceipt: OrchestrationWorkerLaunchReceipt
   mode: WorkerStartModeReceipt
+  /** The caller's timeout, as the receipt reports it. */
   timeoutMs: number
+  /** When the caller's timeout runs out; a structured preamble waits on its agent until then. */
+  readinessDeadline: number
   effects: WorkerEffect[]
   fileClaims?: WorkerFileClaimOutcome
   workMode?: RunWorkMode
@@ -53,18 +58,21 @@ export async function deliverAndSettleWorkerStartReadiness(args: {
   args.onStage('dispatch_input')
   const delivery = await deliverWorkerDispatchPreamble({
     runtime,
+    db,
     structuredSession,
     terminalHandle,
     dispatchId: args.dispatchId,
     dispatchDepth: args.dispatchDepth,
+    runId: run.id,
     taskId: task.id,
     taskSpec: task.spec,
     coordinatorHandle: args.coordinatorHandle,
-    dispatchCapability: args.dispatchCapability,
     devMode: args.devMode,
     requestId: args.requestId,
     fileClaims: args.fileClaims,
-    workMode: args.workMode
+    workMode: args.workMode,
+    launchedAgent: args.launchedAgent,
+    readinessTimeoutMs: Math.max(0, args.readinessDeadline - Date.now())
   })
   effects.push({
     kind: 'dispatch_input',
@@ -95,7 +103,7 @@ export async function deliverAndSettleWorkerStartReadiness(args: {
   const currentWorker = db.getWorkerDispatch(args.dispatchId)
   const alreadySettled = currentWorker && currentWorker.state !== 'starting'
   if (turnStart.verdict === 'unobserved' && !alreadySettled) {
-    // Honest `unverifiable`: keep the dispatch capability and the terminal — the worker may
+    // Honest `unverifiable`: keep lifecycle authority and the terminal — the worker may
     // still recover and report (worker-report settlement reconnects a start_unknown worker) —
     // but never claim ready for a turn nobody observed.
     effects.push({
@@ -128,8 +136,10 @@ export async function deliverAndSettleWorkerStartReadiness(args: {
       residualResources: JSON.parse(worker.residual_resources) as unknown[],
       nextCommands: [
         `orca orchestration worker-show --dispatch ${args.dispatchId} --json`,
-        // A structured worker has no screen to read.
-        ...(structuredSession ? [] : [`orca terminal read --terminal ${terminalHandle} --screen`]),
+        // A structured worker or a chat has no screen to read.
+        ...(structuredSession || chatAssigneeSessionId(terminalHandle)
+          ? []
+          : [`orca terminal read --terminal ${terminalHandle} --screen`]),
         `orca orchestration worker-abandon --dispatch ${args.dispatchId} --json`
       ],
       ...(args.terminalRevealWarning ? { warning: args.terminalRevealWarning } : {})

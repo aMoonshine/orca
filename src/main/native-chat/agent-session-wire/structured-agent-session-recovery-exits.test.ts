@@ -4,9 +4,10 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { spawnProcess } from '../../../shared/child-process/run-process'
-import { CODEX_SPAWN_TOKEN_ENV } from '../../codex/codex-structured-owner-identity'
-import { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import { spawnProcess } from '@orca/process-host'
+import { ORCA_AGENT_SESSION_SPAWN_TOKEN_ENV } from '../../../shared/agent-session-caller-env'
+import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import { openTestAgentSessionRecordStore } from '../../runtime/agent-session-record-store-test-harness'
 import { readProcessStartTimeMs } from '../../runtime/agent-session-process-identity-probe'
 import { createStructuredAgentSessionOwnerProbe } from '../../runtime/structured-agent-session-owner-probe'
 import type { StructuredAgentSessionAdapter } from './structured-agent-session-adapter'
@@ -20,6 +21,10 @@ import {
   hostTestAttachParams,
   resetHostTestOperationIds
 } from './structured-agent-session-host-test-data'
+import { openTestJournalHostDatabase } from '../agent-session-journal/journal-host-database-test-support'
+import { createStructuredAgentSessionLogger } from './structured-agent-session-logger'
+import { codexProviderHandle } from '../../../shared/agent-session-provider-handle-encoding'
+import { NO_STRUCTURED_AGENTS } from './structured-agent-session-adapter-router-test-support'
 
 const CALLER = { callerKey: 'client-1' }
 
@@ -30,11 +35,11 @@ let acquire: Mock<StructuredAgentSessionAdapter['acquire']>
 const spawnedOwners = new Set<ReturnType<typeof spawnProcess>>()
 const supersededHosts = new Set<StructuredAgentSessionHost>()
 
-async function spawnOwner(spawnToken: string) {
+async function acquireOwner(spawnToken: string) {
   const child = spawnProcess({
     program: process.execPath,
     args: ['-e', 'setInterval(() => {}, 1_000)'],
-    env: { ...process.env, [CODEX_SPAWN_TOKEN_ENV]: spawnToken }
+    env: { ...process.env, [ORCA_AGENT_SESSION_SPAWN_TOKEN_ENV]: spawnToken }
   })
   spawnedOwners.add(child)
   const pid = child.pid
@@ -68,20 +73,25 @@ async function startAgent(): Promise<void> {
 
 function adapter(): StructuredAgentSessionAdapter {
   return {
+    open: async () => ({
+      reportedOptions: { model: '' }
+    }),
     acquire,
-    releaseAcquisition: vi.fn(async () => undefined),
+    releaseAcquisition: vi.fn(async () => false),
     dispatch: vi.fn(),
     cancelTurn: vi.fn(),
     answerPrompt: vi.fn(),
     setOption: vi.fn()
-  } as unknown as StructuredAgentSessionAdapter
+  }
 }
 
 function openHost(overrides: Partial<StructuredAgentSessionHostDeps> = {}): void {
   host = new StructuredAgentSessionHost({
+    agents: NO_STRUCTURED_AGENTS,
+    logger: createStructuredAgentSessionLogger(),
     store,
     adapter: adapter(),
-    journalRoot: root,
+    journalDatabase: openTestJournalHostDatabase(root),
     claimKeyId: 'key-1',
     mintSpawnToken: () => 'spawn-a',
     now: () => NOW,
@@ -91,13 +101,14 @@ function openHost(overrides: Partial<StructuredAgentSessionHostDeps> = {}): void
 
 async function reopenStore(): Promise<void> {
   await abandonStructuredAgentSessionHost(host)
-  store = await AgentSessionRecordStore.open({ directory: join(root, 'store'), hostId: 'local' })
+  store = await openTestAgentSessionRecordStore(root)
 }
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'orca-recovery-exits-'))
   resetHostTestOperationIds()
   acquire = vi.fn(async ({ fence }) => ({
+    acquisitionGeneration: globalThis.crypto.randomUUID(),
     process: {
       hostId: 'local',
       pid: 4242,
@@ -106,13 +117,13 @@ beforeEach(async () => {
     },
     link: {
       linkId: `link-${fence}`,
-      handle: { provider: 'codex', threadId: THREAD },
+      handle: codexProviderHandle(THREAD),
       origin: store.getRecord(SESSION)?.providerHandleChain.length ? 'resumed' : 'created',
       mintedAtFence: fence,
       observedAt: NOW
     }
   }))
-  store = await AgentSessionRecordStore.open({ directory: join(root, 'store'), hostId: 'local' })
+  store = await openTestAgentSessionRecordStore(root)
   openHost()
 })
 
@@ -279,12 +290,13 @@ describe('recovery exits', () => {
   })
 
   it('recovers when the outgoing runtime writes after the replacement probes its dying owner', async () => {
-    const outgoing = await spawnOwner('spawn-a')
+    const outgoing = await acquireOwner('spawn-a')
     acquire.mockResolvedValueOnce({
+      acquisitionGeneration: globalThis.crypto.randomUUID(),
       process: outgoing.process,
       link: {
         linkId: 'link-outgoing',
-        handle: { provider: 'codex', threadId: THREAD },
+        handle: codexProviderHandle(THREAD),
         origin: 'created',
         mintedAtFence: 1,
         observedAt: NOW
@@ -295,7 +307,7 @@ describe('recovery exits', () => {
     const outgoingHost = host
     const outgoingStore = store
     supersededHosts.add(outgoingHost)
-    store = await AgentSessionRecordStore.open({ directory: join(root, 'store'), hostId: 'local' })
+    store = await openTestAgentSessionRecordStore(root)
     const realProbe = createStructuredAgentSessionOwnerProbe('local')
     let overlapDriven = false
     openHost({
@@ -324,12 +336,13 @@ describe('recovery exits', () => {
     })
     expect(acquire).toHaveBeenCalledOnce()
 
-    const replacement = await spawnOwner('spawn-b')
+    const replacement = await acquireOwner('spawn-b')
     acquire.mockResolvedValueOnce({
+      acquisitionGeneration: globalThis.crypto.randomUUID(),
       process: replacement.process,
       link: {
         linkId: 'link-replacement',
-        handle: { provider: 'codex', threadId: THREAD },
+        handle: codexProviderHandle(THREAD),
         origin: 'resumed',
         mintedAtFence: 3,
         observedAt: NOW + 2

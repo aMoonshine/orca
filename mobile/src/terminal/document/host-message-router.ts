@@ -6,7 +6,7 @@ import { emitModesIfChanged } from './mode-mirroring'
 import { reflow } from './reflow'
 import { resumeTerminalDataReplyAuthority } from './query-reply'
 import { repositionOverlay } from './selection-overlay'
-import { cancelSelect } from './selection-range'
+import { cancelSelect } from './selection-mode'
 import { resetEvictionCounter } from './selection-state-and-eviction'
 import { applyTerminalTheme } from './terminal-theme'
 import { init, resize, write } from './terminal-init'
@@ -94,6 +94,7 @@ export function handleMsg(scope: TerminalDocumentScope, msg: TerminalHostMessage
     scope.statusDotPendingSelector = false
     scope.afterDrainCallbacks = []
     scope.writesDraining = false
+    scope.mouseEncodingKnown = false
     scope.mouseModeScanTail = ''
     scope.trackedMouseTrackingMode = 'none'
     scope.sgrMouseMode = false

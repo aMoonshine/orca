@@ -17,9 +17,15 @@ export function buildRehydrateSequences(modes: TerminalModes): string {
   if (modes.applicationCursor) {
     seqs.push('\x1b[?1h')
   }
+  // Why: a reattached pane's input mirror reads this to keep pi's modified Enter unambiguous;
+  // xterm itself ignores XTMODKEYS, so older clients are unaffected.
+  if (modes.modifyOtherKeys !== undefined) {
+    seqs.push(`\x1b[>4;${modes.modifyOtherKeys}m`)
+  }
   // Why: mobile alt-screen scroll gestures need xterm's mouse mode restored
   // from cold snapshots; OpenCode/OpenTUI enables scrollable panes this way.
-  switch (modes.mouseTracking ? (modes.mouseTrackingMode ?? 'vt200') : 'none') {
+  const trackingMode = modes.mouseTracking ? (modes.mouseTrackingMode ?? 'vt200') : 'none'
+  switch (trackingMode) {
     case 'x10':
       seqs.push('\x1b[?9h')
       break
@@ -41,6 +47,9 @@ export function buildRehydrateSequences(modes: TerminalModes): string {
     seqs.push('\x1b[?1016h')
   } else if (modes.sgrMouseMode) {
     seqs.push('\x1b[?1006h')
+  } else if (trackingMode !== 'none') {
+    // Why: states the default encoding, so a replay reader never has to guess it.
+    seqs.push('\x1b[?1006l')
   }
   return seqs.join('')
 }

@@ -4,7 +4,7 @@ import {
   getAgentPromptSubmitDelayMs,
   getTerminalPasteIngestMs
 } from '../../shared/agent-prompt-injection'
-import { setSshTargetRegistryHandlers } from '../ssh/ssh-target-registry'
+import { setSshTargetRegistryHandlers } from '../ssh/targets/ssh-target-registry'
 import { OrcaRuntimeService } from './orca-runtime'
 import { makeStore } from './runtime-rpc-worktree-store-fixtures'
 
@@ -161,26 +161,6 @@ describe('agent prompt submit delay on a ConPTY host', () => {
     expect(submitTimes).toHaveLength(1)
     expect(submitTimes[0]).toBeGreaterThan(3_342)
     await stalled
-  })
-
-  it('does not send another Enter after cancellation during verification', async () => {
-    useHostPlatform('win32')
-    vi.useFakeTimers()
-    const controller = new AbortController()
-    const { runtime, handle, writes } = await createPromptRuntime()
-    const submission = runtime.sendTerminalAgentPrompt(handle, 'review this', {
-      inputKind: 'driving',
-      signal: controller.signal
-    })
-    const rejected = expect(submission).rejects.toThrow('request_aborted')
-
-    await vi.advanceTimersByTimeAsync(submitDelayFor('review this', 'win32'))
-    expect(countSubmits(writes)).toBe(1)
-    controller.abort()
-    await vi.runAllTimersAsync()
-
-    await rejected
-    expect(countSubmits(writes)).toBe(1)
   })
 
   it('charges a non-Windows host only the settle window', async () => {

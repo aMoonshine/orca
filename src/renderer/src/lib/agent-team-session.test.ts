@@ -39,7 +39,10 @@ describe('master session lifecycle', () => {
   it('waits for the real CLI before sending the bootstrap exactly once and prevents duplicate starts', async () => {
     await startAgentTeam(args)
     expect(mocks.launch).toHaveBeenCalledWith(
-      expect.objectContaining({ terminalOnly: true, sessionOptions: { model: 'provider/master' } })
+      expect.objectContaining({
+        requestedSurface: 'terminal',
+        sessionOptions: { model: 'provider/master' }
+      })
     )
     expect(mocks.launch.mock.calls[0][0].prompt).toBeUndefined()
     expect(mocks.rpc.mock.calls.map(([, method]) => method)).toEqual([

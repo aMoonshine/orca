@@ -4,12 +4,33 @@ import '@testing-library/jest-dom/vitest'
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+
+// Why: these fixtures have neither inline visual owners nor sender navigation.
+const unusedChatLeaves = vi.hoisted(() => ({
+  inlineVisual: vi.fn(() => {
+    throw new Error('Unexpected inline visual in transcript fixture')
+  }),
+  openSender: vi.fn(() => {
+    throw new Error('Unexpected sender navigation in transcript fixture')
+  })
+}))
+vi.mock('./NativeChatInlineVisual', () => ({
+  NativeChatInlineVisual: unusedChatLeaves.inlineVisual
+}))
+vi.mock('@/lib/open-agent-message-sender', () => ({
+  openAgentMessageSender: unusedChatLeaves.openSender
+}))
+afterEach(() => {
+  expect(unusedChatLeaves.inlineVisual).not.toHaveBeenCalled()
+  expect(unusedChatLeaves.openSender).not.toHaveBeenCalled()
+})
 import type { NativeChatLiveSession } from './use-native-chat-live-session'
 import { NativeChatMessageList } from './NativeChatMessageList'
 import { installNativeChatMessageListTestViewport } from './native-chat-message-list-test-viewport'
 import type {
   AgentJournalItemBody,
-  AgentJournalRenderItem
+  AgentJournalRenderItem,
+  AgentJournalTurnScope
 } from '../../../../shared/agent-session-journal-types'
 
 // The turn record this host writes, and the legacy status row an older host sends.
@@ -84,7 +105,6 @@ describe('NativeChatMessageList turn indicator', () => {
         }}
         isWorking
         expandSignal={false}
-        fontScale={1}
       />
     )
 
@@ -92,7 +112,7 @@ describe('NativeChatMessageList turn indicator', () => {
     const row = activity.closest('[data-native-chat-turn-activity]')
     const spinner = row?.querySelector('svg')
     expect(activity).not.toHaveClass('animate-pulse', 'animate-spin')
-    expect(spinner).toHaveClass('size-4', 'animate-spin', 'motion-reduce:animate-none')
+    expect(spinner).toHaveClass('size-4', 'animate-spin', 'motion-reduce:hidden')
     expect(row).toHaveAttribute('aria-live', 'polite')
     expect(screen.getByText('The answer is still streaming.').compareDocumentPosition(row!)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING
@@ -124,7 +144,6 @@ describe('NativeChatMessageList turn indicator', () => {
         }}
         isWorking
         expandSignal={false}
-        fontScale={1}
       />
     )
 
@@ -138,7 +157,7 @@ describe('NativeChatMessageList turn indicator', () => {
     expect(activity).not.toHaveTextContent('pnpm test')
     const spinner = activity.closest('[data-native-chat-turn-activity]')?.querySelector('svg')
     expect(activity).not.toHaveClass('animate-pulse', 'animate-spin')
-    expect(spinner).toHaveClass('animate-spin', 'motion-reduce:animate-none')
+    expect(spinner).toHaveClass('animate-spin', 'motion-reduce:hidden')
   })
 
   it('hides foreground turn activity without settling live tool state', () => {
@@ -168,7 +187,6 @@ describe('NativeChatMessageList turn indicator', () => {
         isWorking
         awaitingInput="shown"
         expandSignal={false}
-        fontScale={1}
       />
     )
 
@@ -199,7 +217,6 @@ describe('NativeChatMessageList turn indicator', () => {
         workingStartedAt={Date.now() - 5000}
         awaitingInput="unshown"
         expandSignal={false}
-        fontScale={1}
       />
     )
 
@@ -208,48 +225,6 @@ describe('NativeChatMessageList turn indicator', () => {
     )
     expect(container.querySelector('[data-native-chat-turn-activity]')).toBeNull()
     expect(screen.getByText('Working for 5s')).toBeInTheDocument()
-  })
-
-  it('keeps the live row up after a tool settles', () => {
-    render(
-      <NativeChatMessageList
-        session={{
-          ...session,
-          status: 'working',
-          messages: [
-            {
-              id: 'assistant-completed-tool',
-              role: 'assistant',
-              blocks: [
-                {
-                  type: 'tool-call',
-                  name: 'shell',
-                  input: { command: 'pnpm test' },
-                  state: 'completed'
-                },
-                { type: 'tool-result', output: 'passed' }
-              ],
-              timestamp: 1,
-              source: 'transcript'
-            }
-          ]
-        }}
-        isWorking
-        expandSignal={false}
-        fontScale={1}
-      />
-    )
-
-    // The settled run heads with the command it ran; the live row is separate.
-    const settledTool = screen.getByText('pnpm test')
-    const activity = screen.getByText('Working…')
-    expect(activity.textContent).not.toBe(settledTool.textContent)
-    expect(activity).not.toHaveTextContent('shell')
-    expect(activity).not.toHaveTextContent('pnpm test')
-    expect(activity).not.toHaveClass('animate-pulse', 'animate-spin')
-    expect(activity.closest('[data-native-chat-turn-activity]')?.querySelector('svg')).toHaveClass(
-      'animate-spin'
-    )
   })
 
   // The run is the turn's trailing one, so it stays live between calls and only
@@ -283,7 +258,6 @@ describe('NativeChatMessageList turn indicator', () => {
         isWorking
         turnActivity={{ kind: 'description', text: 'Preparing the answer' }}
         expandSignal={false}
-        fontScale={1}
       />
     )
 
@@ -304,7 +278,6 @@ describe('NativeChatMessageList turn indicator', () => {
         isWorking={false}
         turnActivity={{ kind: 'description', text: 'Preparing the answer' }}
         expandSignal={false}
-        fontScale={1}
       />
     )
 
@@ -346,12 +319,7 @@ describe('NativeChatMessageList turn indicator', () => {
       transcriptLifecycle: { state: 'working', turnId: user.id, timestamp: 1 }
     }
     const rendered = render(
-      <NativeChatMessageList
-        session={bridgeSession}
-        isWorking={false}
-        expandSignal={false}
-        fontScale={1}
-      />
+      <NativeChatMessageList session={bridgeSession} isWorking={false} expandSignal={false} />
     )
 
     expect(screen.getByText('Awaiting user input:')).toBeInTheDocument()
@@ -376,7 +344,6 @@ describe('NativeChatMessageList turn indicator', () => {
         }}
         isWorking={false}
         expandSignal={false}
-        fontScale={1}
       />
     )
 
@@ -404,7 +371,6 @@ describe('NativeChatMessageList turn indicator', () => {
         journalItems={[journalItem(1, turnItem), journalItem(2, reasoningRow)]}
         isWorking
         expandSignal={false}
-        fontScale={1}
       />
     )
 
@@ -443,7 +409,6 @@ describe('NativeChatMessageList turn indicator', () => {
         ]}
         isWorking
         expandSignal={false}
-        fontScale={1}
       />
     )
 
@@ -471,7 +436,6 @@ describe('NativeChatMessageList turn indicator', () => {
         turnActivity={{ kind: 'description', text: 'Exploring the repo layout' }}
         isWorking
         expandSignal={false}
-        fontScale={1}
       />
     )
 
@@ -506,7 +470,6 @@ describe('NativeChatMessageList turn indicator', () => {
         }}
         isWorking
         expandSignal={false}
-        fontScale={1}
       />
     )
 
@@ -558,7 +521,6 @@ describe('NativeChatMessageList turn indicator', () => {
         isWorking
         workingStartedAt={Date.now() - 3000}
         expandSignal={false}
-        fontScale={1}
       />
     )
 
@@ -593,7 +555,6 @@ describe('NativeChatMessageList turn indicator', () => {
         isWorking
         workingStartedAt={startedAt}
         expandSignal={false}
-        fontScale={1}
       />
     )
     // The live bar sits where the settled one will, so settling never moves it.
@@ -608,7 +569,6 @@ describe('NativeChatMessageList turn indicator', () => {
         isWorking={false}
         workingStartedAt={null}
         expandSignal={false}
-        fontScale={1}
       />
     )
 
@@ -641,7 +601,6 @@ describe('NativeChatMessageList turn indicator', () => {
         isWorking
         workingStartedAt={Date.now()}
         expandSignal={false}
-        fontScale={1}
       />
     )
 
@@ -649,92 +608,143 @@ describe('NativeChatMessageList turn indicator', () => {
     expect(screen.getByText('Working for 0s')).toBeInTheDocument()
   })
 
-  it('keeps the live bar under the prompt that opened the running turn, not a message sent mid-turn', () => {
-    const prompt = (id: string, text: string): NativeChatLiveSession['messages'][number] => ({
-      id,
-      role: 'user',
-      blocks: [{ type: 'text', text }],
-      timestamp: 1,
-      source: 'transcript'
-    })
-    const messages = [
-      prompt('user-a', 'Run four sleeps'),
-      {
-        id: 'tool-a',
-        role: 'assistant' as const,
-        blocks: [
-          {
-            type: 'tool-call' as const,
-            name: 'Bash',
-            input: { command: 'sleep 15' },
-            state: 'running' as const
-          }
-        ],
-        timestamp: 2,
-        source: 'transcript' as const
-      },
-      prompt('user-b', 'Also say banana')
-    ]
-    const list = (props: Partial<React.ComponentProps<typeof NativeChatMessageList>>) => (
-      <NativeChatMessageList
-        session={{ ...session, status: 'working', messages }}
-        isWorking
-        expandSignal={false}
-        fontScale={1}
-        {...props}
-      />
-    )
-    // B was sent while A's turn runs: the host still names A as the running turn's opener.
-    const { rerender } = render(
-      list({
-        workingStartedAt: Date.now() - 5000,
-        settledTurns: new Map(),
-        activeTurnOpenedBy: 'user-a'
+  it.each([
+    ["a host that states each row's turn", true],
+    ['a host that states none', false]
+  ])(
+    'keeps the live bar under the prompt that opened the running turn, not a message sent mid-turn, on %s',
+    (_, scoped) => {
+      const prompt = (id: string, text: string): NativeChatLiveSession['messages'][number] => ({
+        id,
+        role: 'user',
+        blocks: [{ type: 'text', text }],
+        timestamp: 1,
+        source: 'transcript'
       })
-    )
-    const barA = screen.getByText('Working for 5s').closest('[data-native-chat-turn-status]')
-    expect(screen.getAllByText(/Working for/)).toHaveLength(1)
-    expect(screen.getByText('Run four sleeps').compareDocumentPosition(barA!)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING
-    )
-    expect(barA!.compareDocumentPosition(screen.getByText('Also say banana'))).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING
-    )
+      const messages = [
+        prompt('user-a', 'Run four sleeps'),
+        {
+          id: 'tool-a',
+          role: 'assistant' as const,
+          blocks: [
+            {
+              type: 'tool-call' as const,
+              name: 'Bash',
+              input: { command: 'sleep 15' },
+              state: 'running' as const
+            }
+          ],
+          timestamp: 2,
+          source: 'transcript' as const
+        },
+        prompt('user-b', 'Also say banana')
+      ]
+      // B was handed over while A's turn runs, so a host that states scopes puts it in that turn.
+      const t1: AgentJournalTurnScope = { kind: 'turn', turnItemId: 't1' }
+      const thread: AgentJournalTurnScope = { kind: 'thread' }
+      const row = (
+        itemId: string,
+        sequence: number,
+        body: AgentJournalItemBody,
+        turnScope: AgentJournalTurnScope
+      ): AgentJournalRenderItem => ({
+        itemId,
+        revision: 1,
+        sequence,
+        observedAt: sequence,
+        body,
+        ...(scoped ? { turnScope } : {})
+      })
+      const journal = (t1State: 'running' | 'completed', t2State?: 'running' | 'completed') => [
+        row('user-a', 1, { kind: 'message', role: 'user', blocks: [] }, thread),
+        row('t1', 2, { kind: 'turn', turnId: 't1', state: t1State, userItemId: 'user-a' }, thread),
+        row('tool-a', 3, { kind: 'message', role: 'assistant', blocks: [] }, t1),
+        row('user-b', 4, { kind: 'message', role: 'user', blocks: [] }, t1),
+        ...(t2State
+          ? [
+              row(
+                't2',
+                5,
+                { kind: 'turn', turnId: 't2', state: t2State, userItemId: 'user-b' },
+                thread
+              )
+            ]
+          : [])
+      ]
+      const list = (props: Partial<React.ComponentProps<typeof NativeChatMessageList>>) => (
+        <NativeChatMessageList
+          session={{ ...session, status: 'working', messages }}
+          isWorking
+          expandSignal={false}
+          {...props}
+        />
+      )
+      // B was sent while A's turn runs: the host's record still names A as the running turn's opener.
+      const { rerender } = render(
+        list({
+          workingStartedAt: Date.now() - 5000,
+          settledTurns: new Map(),
+          journalItems: journal('running')
+        })
+      )
+      const barA = screen.getByText('Working for 5s').closest('[data-native-chat-turn-status]')
+      expect(screen.getAllByText(/Working for/)).toHaveLength(1)
+      expect(screen.getByText('Run four sleeps').compareDocumentPosition(barA!)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      )
+      expect(barA!.compareDocumentPosition(screen.getByText('Also say banana'))).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      )
 
-    // B's own turn opens: A settles in place and B counts from A's end.
-    rerender(
-      list({
-        workingStartedAt: Date.now() - 1000,
-        settledTurns: new Map([['user-a', { startedAt: 1, workedSeconds: 17 }]]),
-        activeTurnOpenedBy: 'user-b'
-      })
-    )
-    expect(screen.getByText('Worked for 17s').closest('[data-native-chat-turn-status]')).toBe(barA)
-    const barB = screen.getByText('Working for 1s').closest('[data-native-chat-turn-status]')
-    expect(screen.getByText('Also say banana').compareDocumentPosition(barB!)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING
-    )
+      // A settles in place: under its prompt, above B. A's tool work is A's on either host (read
+      // from its scope, or from journal order), so the settled bar becomes that work's fold toggle.
+      const expectSettledUnderA = () => {
+        const settledA = screen
+          .getByText('Worked for 17s')
+          .closest('[data-native-chat-turn-status]')
+        expect(screen.getByText('Run four sleeps').compareDocumentPosition(settledA!)).toBe(
+          Node.DOCUMENT_POSITION_FOLLOWING
+        )
+        expect(settledA!.compareDocumentPosition(screen.getByText('Also say banana'))).toBe(
+          Node.DOCUMENT_POSITION_FOLLOWING
+        )
+      }
 
-    rerender(
-      list({
-        isWorking: false,
-        session: { ...session, status: 'ready', messages },
-        workingStartedAt: null,
-        settledTurns: new Map([
-          ['user-a', { startedAt: 1, workedSeconds: 17 }],
-          ['user-b', { startedAt: 2, workedSeconds: 51 }]
-        ]),
-        activeTurnOpenedBy: null
-      })
-    )
-    expect(screen.getByText('Worked for 17s').closest('[data-native-chat-turn-status]')).toBe(barA)
-    expect(
-      screen
-        .getByText('Also say banana')
-        .compareDocumentPosition(screen.getByText('Worked for 51s'))
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(screen.queryByText(/Working for/)).toBeNull()
-  })
+      // B's own turn opens: A settles in place and B counts from A's end.
+      rerender(
+        list({
+          workingStartedAt: Date.now() - 1000,
+          settledTurns: new Map([['user-a', { startedAt: 1, workedSeconds: 17 }]]),
+          journalItems: journal('completed', 'running')
+        })
+      )
+      expectSettledUnderA()
+      const barB = screen.getByText('Working for 1s').closest('[data-native-chat-turn-status]')
+      expect(screen.getByText('Also say banana').compareDocumentPosition(barB!)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      )
+
+      rerender(
+        list({
+          isWorking: false,
+          session: { ...session, status: 'ready', messages },
+          workingStartedAt: null,
+          settledTurns: new Map([
+            ['user-a', { startedAt: 1, workedSeconds: 17 }],
+            ['user-b', { startedAt: 2, workedSeconds: 51 }]
+          ]),
+          journalItems: journal('completed', 'completed')
+        })
+      )
+      expectSettledUnderA()
+      expect(
+        screen
+          .getByText('Also say banana')
+          .compareDocumentPosition(screen.getByText('Worked for 51s'))
+      ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+      expect(screen.queryByText(/Working for/)).toBeNull()
+    }
+  )
 
   it("uses the completed caret to expand that turn's tool details", () => {
     const startedAt = Date.now() - 3000
@@ -771,7 +781,6 @@ describe('NativeChatMessageList turn indicator', () => {
         isWorking={false}
         workingStartedAt={startedAt}
         expandSignal={false}
-        fontScale={1}
       />
     )
 

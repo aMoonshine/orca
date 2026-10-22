@@ -1,5 +1,6 @@
+import { newAgentLaunchRequestId } from './agent-launch-request-id'
 import { z } from 'zod'
-import type { RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
+import type { RuntimeClientTarget } from '../../../shared/runtime-client-target'
 import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import { launchAgentInNewTab } from './launch-agent-in-new-tab'
 import { buildAgentTeamPrompt } from '../../../shared/agent-team-prompt'
@@ -39,7 +40,8 @@ export async function startAgentTeam(args: {
   }
   const result = launchAgentInNewTab({
     agent: args.leader,
-    terminalOnly: true,
+    requestedSurface: 'terminal',
+    requestId: newAgentLaunchRequestId(),
     quickCommandLabel: 'Master chat',
     worktreeId: args.worktreeId,
     sessionOptions: { model: args.leaderModel },
@@ -51,10 +53,7 @@ export async function startAgentTeam(args: {
     )
   }
   const session: TeamSession = {
-    tabId: result.surface.tabId,
-    ...(result.surface.kind === 'local-agent-session'
-      ? { handle: `session:${result.surface.sessionId}` }
-      : {})
+    tabId: result.surface.tabId
   }
   localStorage.setItem(key, JSON.stringify(session))
   const deadline = Date.now() + 30_000
