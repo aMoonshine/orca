@@ -228,19 +228,56 @@ describe('worker file claims', () => {
     db.close()
   })
 
-  it('keeps the claims its siblings earned when one path in the list is bad', () => {
+  it.each([
+    ['src/app/ok.ts', '../escape.ts'],
+    ['../escape.ts', 'src/app/ok.ts'],
+    ['src/app/ok.ts', '../escape.ts', 'src/app/later.ts']
+  ])('rejects an invalid batch atomically: %j', (...paths) => {
     const db = newDb()
     const result = db.claimWorkerFiles({
       ...SCOPE,
       dispatchId: 'dispatch_a',
-      paths: ['src/app/ok.ts', '../escape.ts'],
+      paths,
       flavor: POSIX
     })
 
-    expect(result.granted.map((row) => row.claim_key)).toEqual(['src/app/ok.ts'])
+    expect(result.granted).toEqual([])
     expect(result.refused).toHaveLength(1)
+    expect(db.listFileClaimsForDispatch('dispatch_a')).toEqual([])
     db.close()
   })
+
+  it.each(['src/peer.ts', '../escape.ts'])(
+    'preserves prior ownership when an extending batch refuses %s',
+    (refusedPath) => {
+      const db = newDb()
+      const own = db.claimWorkerFiles({
+        ...SCOPE,
+        dispatchId: 'dispatch_a',
+        paths: ['src/own.ts'],
+        flavor: POSIX
+      })
+      db.claimWorkerFiles({
+        ...SCOPE,
+        dispatchId: 'dispatch_b',
+        paths: ['src/peer.ts'],
+        flavor: POSIX
+      })
+
+      const result = db.claimWorkerFiles({
+        ...SCOPE,
+        dispatchId: 'dispatch_a',
+        paths: ['./src/own.ts', 'src/new.ts', refusedPath],
+        flavor: POSIX
+      })
+
+      expect(result.granted).toEqual([])
+      expect(result.refused).toHaveLength(1)
+      expect(db.listFileClaimsForDispatch('dispatch_a')).toEqual(own.granted)
+      expect(db.listFileClaimsForDispatch('dispatch_b')).toHaveLength(1)
+      db.close()
+    }
+  )
 
   it('throws a refusal that names the holder so the worker can negotiate', () => {
     const db = newDb()

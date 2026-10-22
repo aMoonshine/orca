@@ -109,6 +109,9 @@ export async function checkRunMailbox(args: {
     const messages = db.getRunMailboxHistory(run.id, 100, typeFilter)
     const result = {
       messages: exposeMessages(messages),
+      pendingQuestions: exposeMessages(
+        typeFilter && !typeFilter.includes('question') ? [] : db.getPendingRunQuestions(run.id)
+      ),
       count: messages.length,
       acknowledged: acknowledged ?? null
     }

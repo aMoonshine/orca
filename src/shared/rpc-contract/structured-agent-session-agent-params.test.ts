@@ -17,6 +17,18 @@ const ENVELOPE = {
 }
 
 describe('structured agent params', () => {
+  it('accepts the additive refresh flag without loosening catalog validation', () => {
+    expect(ModelCatalogParams.parse({ agent: 'codex', forceRefresh: true })).toEqual({
+      agent: 'codex',
+      forceRefresh: true
+    })
+    expect(ModelCatalogParams.safeParse({ agent: 'codex', forceRefresh: 'true' }).success).toBe(
+      false
+    )
+    expect(ModelCatalogParams.safeParse({ agent: 'codex', refreshEverything: true }).success).toBe(
+      false
+    )
+  })
   it('keeps normal question answers valid and bounds the combined answer body after schema extraction', () => {
     const base = { envelope: ENVELOPE, itemId: 'question-1', expectedRevision: 1 }
     const ordinary = { ...base, answers: [{ questionId: 'q1', optionIds: ['yes'], other: 'why' }] }

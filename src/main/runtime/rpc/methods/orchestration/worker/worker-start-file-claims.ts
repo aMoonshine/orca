@@ -1,17 +1,24 @@
 import { isCaseInsensitiveRuntimeRoot } from '../../../../../../shared/cross-platform-path'
+import { isWslUncPath } from '../../../../../../shared/wsl-paths'
 import type { ClaimPathFlavor } from '../../../../../../shared/swarm/file-claim-path-key'
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
 import type { OrchestrationDb } from '../../../../orchestration/db'
 import type { WorkerFileClaimRow } from '../../../../orchestration/db/file-claims/file-claim-store'
+import {
+  beginLifecycleWriteTransaction,
+  commitLifecycleWriteTransaction,
+  rollbackLifecycleWriteTransaction
+} from '../../../../orchestration/db/lifecycle-transition'
 
-/**
- * Why the root path decides case, not the running host: a workspace reached over SSH
- * or WSL lives on the remote filesystem, so the local OS says nothing useful about it.
- * `isCaseInsensitiveRuntimeRoot` already encodes the Windows-vs-WSL-UNC-vs-POSIX
- * answer for a given root, so the flavor is a property of where the files are.
- */
+// Resolve on the execution host; macOS and unknown roots conservatively fold case.
 export function claimPathFlavorForWorkspace(workspacePath: string): ClaimPathFlavor {
-  return isCaseInsensitiveRuntimeRoot(workspacePath) ? 'case_insensitive' : 'case_sensitive'
+  if (isCaseInsensitiveRuntimeRoot(workspacePath)) {
+    return 'case_insensitive'
+  }
+  if (isWslUncPath(workspacePath) || process.platform === 'linux') {
+    return 'case_sensitive'
+  }
+  return 'case_insensitive'
 }
 
 /**
@@ -36,58 +43,112 @@ export type WorkerFileClaimOutcome = {
   ownedByOthers: WorkerFileClaimRow[]
 }
 
-/**
- * Record a starting worker's file ownership, refusing a path a peer already holds.
- *
- * Why this runs at worker-start rather than at the first edit: the whole failure this
- * prevents is two agents believing the same file is theirs, and a check after the
- * first write is already too late to stop the clobber. Refusing the dispatch is the
- * only point where the coordinator still has a choice — the alternative is a worker
- * that has been told to stop after it has already started changing files.
- *
- * Returns the sibling claims so the preamble can name them. A worker is more likely to
- * respect a named owner than a rule, and the coordinator can use the same list to
- * re-split the task rather than just fail.
- */
-export function claimWorkerStartFiles(args: {
+/** Admit claims before task delivery; claims do not restrict filesystem writes. */
+type WorkerStartFileClaimArgs = {
   db: OrchestrationDb
   runId: string
   dispatchId: string
+  claims: string | undefined
+}
+
+type PlacedWorkerStartFileClaimArgs = WorkerStartFileClaimArgs & {
   workspaceId: string
   workspacePath: string
-  claims: string | undefined
-}): WorkerFileClaimOutcome {
+}
+
+export function claimWorkerStartFiles(
+  args: PlacedWorkerStartFileClaimArgs
+): WorkerFileClaimOutcome {
+  if (parseClaimPaths(args.claims).length === 0) {
+    return { claims: [], ownedByOthers: [] }
+  }
+  if (!args.workspaceId || !args.workspacePath) {
+    throw new OrchestrationError(
+      'invalid_argument',
+      'File claims require a resolved workspace ID and path.',
+      { effectsApplied: false }
+    )
+  }
+  return claimStartingWorkerFiles({
+    ...args,
+    flavor: claimPathFlavorForWorkspace(args.workspacePath)
+  })
+}
+
+// New workspaces have no filesystem identity until placement; their reservation is private.
+export function reserveWorkerStartFiles(args: WorkerStartFileClaimArgs): WorkerFileClaimOutcome {
+  return claimStartingWorkerFiles({
+    ...args,
+    workspaceId: `pending-workspace:${args.dispatchId}`,
+    flavor: 'case_sensitive'
+  })
+}
+
+export function bindWorkerStartFiles(args: PlacedWorkerStartFileClaimArgs): WorkerFileClaimOutcome {
+  if (parseClaimPaths(args.claims).length === 0) {
+    return { claims: [], ownedByOthers: [] }
+  }
+  const transaction = beginLifecycleWriteTransaction(args.db.db, 'bind_worker_start_files')
+  try {
+    const worker = args.db.getWorkerDispatch(args.dispatchId)
+    const reserved = args.db.listFileClaimsForDispatch(args.dispatchId)
+    if (
+      (worker && worker.state !== 'starting') ||
+      reserved.length === 0 ||
+      reserved.some((claim) => claim.workspace_id !== `pending-workspace:${args.dispatchId}`)
+    ) {
+      throw new OrchestrationError(
+        'dispatch_inactive',
+        'Only a starting worker reservation can bind to a new workspace.'
+      )
+    }
+    args.db.releaseFileClaimsForDispatch(args.dispatchId)
+    const result = claimWorkerStartFiles(args)
+    commitLifecycleWriteTransaction(args.db.db, transaction)
+    return result
+  } catch (error) {
+    rollbackLifecycleWriteTransaction(args.db.db, transaction)
+    throw error
+  }
+}
+
+function claimStartingWorkerFiles(
+  args: WorkerStartFileClaimArgs & { workspaceId: string; flavor: ClaimPathFlavor }
+): WorkerFileClaimOutcome {
   const paths = parseClaimPaths(args.claims)
   if (paths.length === 0) {
     return { claims: [], ownedByOthers: [] }
   }
-  // Why before the DB write: the phase gate is what makes a mode's read-only phase
-  // real. A fusion panelist, a swarm coordination phase and an orchestrator planning
-  // phase all resolve here, so "do not write any file" stops being a sentence in a
-  // prompt and becomes a refusal. Checking after the claim would leave a row the
-  // worker already believes it owns.
-  const phase = args.db.runPhaseAllowsFileClaims(args.runId)
-  if (!phase.allowed) {
-    throw new OrchestrationError('file_claim_phase_read_only', phase.reason, {
-      effectsApplied: false,
-      runId: args.runId
+  const transaction = beginLifecycleWriteTransaction(args.db.db, 'claim_starting_worker_files')
+  try {
+    // Read-only phases refuse claim admission before placement or prompt delivery.
+    const phase = args.db.runPhaseAllowsFileClaims(args.runId)
+    if (!phase.allowed) {
+      throw new OrchestrationError('file_claim_phase_read_only', phase.reason, {
+        effectsApplied: false,
+        runId: args.runId
+      })
+    }
+    const scope = { runId: args.runId, workspaceId: args.workspaceId }
+
+    const result = args.db.claimWorkerFiles({
+      ...scope,
+      dispatchId: args.dispatchId,
+      paths,
+      flavor: args.flavor
     })
-  }
-  const flavor = claimPathFlavorForWorkspace(args.workspacePath)
-  const scope = { runId: args.runId, workspaceId: args.workspaceId }
+    args.db.throwOnRefusedFileClaims(result.refused)
 
-  const result = args.db.claimWorkerFiles({
-    ...scope,
-    dispatchId: args.dispatchId,
-    paths,
-    flavor
-  })
-  args.db.throwOnRefusedFileClaims(result.refused)
-
-  return {
-    claims: result.granted,
-    ownedByOthers: args.db
-      .listWorkerFileClaims(scope)
-      .filter((row) => row.dispatch_id !== args.dispatchId)
+    const outcome = {
+      claims: result.granted,
+      ownedByOthers: args.db
+        .listWorkerFileClaims(scope)
+        .filter((row) => row.dispatch_id !== args.dispatchId)
+    }
+    commitLifecycleWriteTransaction(args.db.db, transaction)
+    return outcome
+  } catch (error) {
+    rollbackLifecycleWriteTransaction(args.db.db, transaction)
+    throw error
   }
 }

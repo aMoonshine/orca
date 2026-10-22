@@ -194,7 +194,9 @@ describe('connect-decision telemetry', () => {
       ],
       [{ outcome: 'failed', reason: 'r' }, 'update_failed'],
       [{ outcome: 'skipped', reason: 'host-newer' }, 'update_host_newer'],
-      [{ outcome: 'skipped', reason: 'rolled-back' }, 'update_rolled_back']
+      [{ outcome: 'skipped', reason: 'rolled-back' }, 'update_rolled_back'],
+      [{ outcome: 'skipped', reason: 'no-template' }, 'update_no_template'],
+      [{ outcome: 'skipped', reason: 'migrating' }, 'update_migrating']
     ]
     for (const [outcome, reason] of outcomes) {
       expect(decided(await managed({ autoUpdate: async () => outcome }))).toMatchObject({

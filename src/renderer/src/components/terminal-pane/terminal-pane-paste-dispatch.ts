@@ -8,6 +8,10 @@ import type {
   TerminalPasteTextOptions
 } from './terminal-paste-model'
 import { writeTerminalPastePtyInput } from './terminal-pty-paste-writer'
+import {
+  recordTerminalConversationInput,
+  withTerminalInputSource
+} from './terminal-user-input-signal'
 
 type PasteTextIntoTerminalPaneArgs = {
   pane: { id: number; leafId: string; terminal: Parameters<typeof pasteTerminalText>[0] }
@@ -46,10 +50,20 @@ export async function pasteTextIntoTerminalPane({
     windowsInputRecordNewline: planOptions?.windowsInputRecordNewline,
     terminalBracketedPasteMode: pane.terminal.modes?.bracketedPasteMode === true
   })
+  let recordedChunkedUserInput = false
   return executeTerminalPastePlan(plan, {
     pasteText: (pasteText, pasteOptions) =>
-      pasteTerminalText(pane.terminal, pasteText, pasteOptions),
-    writePty: (data, signal) => writeTerminalPastePtyInput(transport, data, inputKind, signal),
+      withTerminalInputSource(pane.terminal, source, () =>
+        pasteTerminalText(pane.terminal, pasteText, pasteOptions)
+      ),
+    writePty: async (data, signal) => {
+      const accepted = await writeTerminalPastePtyInput(transport, data, inputKind, signal)
+      if (accepted && source !== 'programmatic' && !recordedChunkedUserInput) {
+        recordedChunkedUserInput = true
+        recordTerminalConversationInput(pane.terminal)
+      }
+      return accepted
+    },
     isTargetCurrent,
     canContinue
   })

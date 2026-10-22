@@ -10,7 +10,11 @@ import { launchSessionEndedLine } from './ssh-host-launch-session-copy'
 import { bridgedTerminalsLine } from './ssh-host-bridged-terminals-copy'
 import { managedUpdateLine, withDetail } from './ssh-host-server-update-copy'
 import { blockedNodeDownload, nodeDownloadBlockedText } from './ssh-host-node-download-copy'
-import { settingUpLabel, sshHostServerReassurance } from './ssh-host-server-setup-copy'
+import {
+  serverNotIncludedText,
+  settingUpLabel,
+  sshHostServerReassurance
+} from './ssh-host-server-setup-copy'
 
 export type SshHostServerStatusLine = {
   text: string
@@ -33,8 +37,12 @@ export function sshHostServerStatusLine(
     return {
       tone: 'warning',
       text: translate(
-        'auto.components.settings.sshHostServer.notServing',
-        'Orca couldn’t confirm that its server on {{host}} is answering.',
+        status.serving.reason === 'fenced'
+          ? 'auto.components.settings.sshHostServer.awaitingOtherDesktop'
+          : 'auto.components.settings.sshHostServer.notServing',
+        status.serving.reason === 'fenced'
+          ? "Another desktop is updating this host's Orca server, so Orca can not confirm it is answering yet. It checks again automatically."
+          : 'Orca couldn’t confirm that its server on {{host}} is answering.',
         { host: target.label }
       ),
       detail: status.serving.detail
@@ -111,6 +119,9 @@ function sourceChangedLine(): SshHostServerStatusLine {
 
 /** `reason` is main's OrcadHostUnavailableReason; an unknown one is shown only as a detail. */
 function unavailableLine(reason: string | undefined): SshHostServerStatusLine {
+  if (reason === 'artifacts_unavailable') {
+    return { tone: 'destructive', text: serverNotIncludedText() }
+  }
   if (reason === TUNNEL_UNAVAILABLE) {
     return tunnelUnavailableLine()
   }
@@ -150,11 +161,6 @@ function unavailableCause(reason: string): string | null {
       return translate(
         'auto.components.settings.sshHostServer.cause.unsupportedHost',
         'Orca has no server build for this system'
-      )
-    case 'artifacts_unavailable':
-      return translate(
-        'auto.components.settings.sshHostServer.cause.artifactsUnavailable',
-        'this Orca build doesn’t include the server'
       )
     case 'libc_unidentified':
       return translate(

@@ -47,6 +47,7 @@ export function reconcileMissingWorkerTerminal(
       throw new OrchestrationError('dispatch_not_found', `Dispatch ${dispatchId} was not found.`)
     }
     if (['succeeded', 'failed', 'stopped', 'abandoned'].includes(worker.state)) {
+      this.releaseFileClaimsForDispatch(dispatchId)
       this.db.exec('COMMIT')
       return worker
     }
@@ -104,6 +105,7 @@ export function reconcileMissingWorkerTerminal(
         updated_at: new Date().toISOString()
       }
     })
+    this.releaseFileClaimsForDispatch(dispatchId)
     this.db.exec('COMMIT')
     return this.getWorkerDispatch(dispatchId) as WorkerDispatchRow
   } catch (error) {

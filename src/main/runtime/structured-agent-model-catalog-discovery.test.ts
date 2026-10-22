@@ -111,7 +111,8 @@ describe('the model catalog contract on every registration', () => {
   it('lists through the command each agent is set to run, never a bare name', async () => {
     const rig = mkdtempSync(join(tmpdir(), 'orca-catalog-overrides-'))
     const home = join(rig, 'home')
-    const standIn = (agent: string): string => join(rig, `${agent}-standin`)
+    const standIn = (agent: string): string =>
+      join(rig, `${agent}-standin${process.platform === 'win32' ? '.exe' : ''}`)
     for (const agent of ['claude', 'codex', 'grok']) {
       // Never run: the spawn is mocked; the override must only be a runnable file.
       writeFileSync(standIn(agent), '#!/bin/sh\nexit 1\n')

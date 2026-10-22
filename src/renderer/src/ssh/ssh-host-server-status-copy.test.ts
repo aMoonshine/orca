@@ -44,6 +44,23 @@ describe('SSH host server status line', () => {
     })
   })
 
+  it('says another desktop holds the server without asking the user to act', () => {
+    const detail = 'An update, rollback or recovery holds this host; it was not started.'
+    expect(
+      sshHostServerStatusLine(plain, {
+        managedServer: {
+          kind: 'managed',
+          environmentId: 'e',
+          serving: { state: 'unverifiable', detail, reason: 'fenced' }
+        }
+      })
+    ).toEqual({
+      tone: 'warning',
+      text: "Another desktop is updating this host's Orca server, so Orca can not confirm it is answering yet. It checks again automatically.",
+      detail
+    })
+  })
+
   it.each([
     'This host’s Orca server process is live but is not answering.',
     'SSH operation was cancelled',
@@ -161,6 +178,26 @@ describe('SSH host server status line', () => {
         undefined
       )
     ).toMatchObject({ text: expect.not.stringContaining('future_reason'), detail: 'future_reason' })
+  })
+
+  it('identifies a missing local server build in live and retained status', () => {
+    const live = sshHostServerStatusLine(plain, {
+      managedServer: { kind: 'relay', reason: 'orcad_unavailable', detail: 'artifacts_unavailable' }
+    })
+    const retained = sshHostServerStatusLine(
+      {
+        label: 'Box',
+        managedServerUnavailable: { reason: 'artifacts_unavailable', appVersion: '1.5.0' }
+      },
+      undefined
+    )
+    for (const line of [live, retained]) {
+      expect(line).toMatchObject({
+        tone: 'destructive',
+        text: expect.stringContaining('This Orca build doesn’t include the server')
+      })
+      expect(line?.text).not.toContain('older version')
+    }
   })
 
   it('tells an unsupported host to install an older Orca, never to fall back', () => {

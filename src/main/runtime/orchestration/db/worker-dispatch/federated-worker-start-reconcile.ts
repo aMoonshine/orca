@@ -151,6 +151,7 @@ export function reconcileFederatedWorkerStart(
         })
       }
       this.closeQuestionsForDispatch(params.dispatchId)
+      this.releaseFileClaimsForDispatch(params.dispatchId)
     }
     commitLifecycleWriteTransaction(this.db, transaction)
     return this.getWorkerDispatch(params.dispatchId) as WorkerDispatchRow

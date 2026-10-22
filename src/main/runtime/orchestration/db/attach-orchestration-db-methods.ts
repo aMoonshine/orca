@@ -67,7 +67,6 @@ import { attachWorkerTerminalRelease } from './worker-terminal/worker-terminal-r
 import { attachWorkerTerminalResourceStore } from './worker-terminal/worker-terminal-resource-store'
 import { attachWorkerTerminalTransfer } from './worker-terminal/worker-terminal-transfer'
 import { attachFileClaimStore } from './file-claims/file-claim-store'
-import { attachDecisionRegister } from './decisions/decision-register'
 
 export function attachOrchestrationDbMethods(ctor: { prototype: object }): void {
   attachAttemptObservationStore(ctor)
@@ -139,5 +138,4 @@ export function attachOrchestrationDbMethods(ctor: { prototype: object }): void 
   attachCoordinatorRunStore(ctor)
   attachOrchestrationReset(ctor)
   attachFileClaimStore(ctor)
-  attachDecisionRegister(ctor)
 }

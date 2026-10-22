@@ -14,6 +14,7 @@ import type { GroupWorker } from '@/lib/agent-group-launch'
 import type { TabAgentLaunchOption } from '../tab-bar/tab-agent-launch-options'
 import { AgentGroupModel } from './AgentGroupModel'
 import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
+import { groupProviderOptions } from '@/lib/agent-group-provider-options'
 
 export function AgentGroupWorkers({
   workers,
@@ -34,6 +35,7 @@ export function AgentGroupWorkers({
   showTasks?: boolean
   onChange: (workers: GroupWorker[]) => void
 }) {
+  const providers = groupProviderOptions(options)
   return (
     <div className="flex flex-col gap-4">
       {workers.map((worker, index) => {
@@ -49,8 +51,8 @@ export function AgentGroupWorkers({
               value={worker.agent}
               disabled={disabled}
               onValueChange={(value) => {
-                const option = options.find((entry) => entry.agent === value)
-                if (option) {
+                const option = providers.find((entry) => entry.agent === value && !entry.disabled)
+                if (option && option.agent !== worker.agent) {
                   change({ agent: option.agent, model: undefined })
                 }
               }}
@@ -65,9 +67,15 @@ export function AgentGroupWorkers({
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  {options.map((option) => (
-                    <SelectItem key={option.agent} value={option.agent}>
+                  {providers.map((option) => (
+                    <SelectItem
+                      key={option.id}
+                      value={option.agent}
+                      disabled={option.disabled}
+                      title={option.reason}
+                    >
                       {option.label}
+                      {option.disabled && option.reason ? ` — ${option.reason}` : ''}
                     </SelectItem>
                   ))}
                 </SelectGroup>

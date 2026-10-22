@@ -59,6 +59,7 @@ export function beginWorkerStop(
       const released = releaseContextOnlyDispatch(this.db, dispatch, 'stopped')
       if (!released.alreadySettled) {
         this.closeQuestionsForDispatch(dispatchId)
+        this.releaseFileClaimsForDispatch(dispatchId)
       }
       this.db.exec('COMMIT')
       return { disposition: 'context_only', ...released }
@@ -145,6 +146,7 @@ export function settleWorkerStop(this: OrchestrationDb, dispatchId: string): Wor
       })
     }
     reconcileTaskAfterDispatchInterruption(this, dispatch.task_id, dispatchId)
+    this.releaseFileClaimsForDispatch(dispatchId)
     this.db.exec('COMMIT')
     return this.getWorkerDispatch(dispatchId) as WorkerDispatchRow
   } catch (error) {
@@ -201,6 +203,7 @@ export function reconcileFederatedWorkerStop(
       })
     }
     reconcileTaskAfterDispatchInterruption(this, dispatch.task_id, dispatchId)
+    this.releaseFileClaimsForDispatch(dispatchId)
     commitLifecycleWriteTransaction(this.db, transaction)
     return this.getWorkerDispatch(dispatchId) as WorkerDispatchRow
   } catch (error) {

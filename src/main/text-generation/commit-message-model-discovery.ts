@@ -34,6 +34,7 @@ import type {
 export type CommitMessageModelDiscoveryLocalOptions = {
   cwd?: string
   wslDistro?: string
+  launchEnv?: Record<string, string>
 }
 
 type DiscoverModelsLocalInput = {
@@ -64,7 +65,9 @@ export async function discoverModelsLocal(
   }
   const env = mergeCommandEnvironment(
     input.env,
-    planned.plan.env,
+    input.options.launchEnv
+      ? { ...input.options.launchEnv, ...planned.plan.env }
+      : planned.plan.env,
     input.options.wslDistro ? 'linux' : process.platform
   )
   const attempt = await runClaudeBackgroundAttempts({
@@ -112,10 +115,12 @@ async function discoverModelsOnce(
           args: plan.args,
           cwd: input.options.cwd,
           env: input.options.wslDistro ? input.env : env,
-          commandEnv: plan.env,
+          commandEnv: input.options.launchEnv
+            ? { ...input.options.launchEnv, ...plan.env }
+            : plan.env,
           wslDistro: input.options.wslDistro,
           stdinMode: plan.stdinPayload === null ? 'ignore' : 'pipe',
-          useCwdForNative: false
+          useCwdForNative: input.options.cwd !== undefined
         })
         if (plan.stdinPayload !== null) {
           child.stdin?.on?.('error', () => {})

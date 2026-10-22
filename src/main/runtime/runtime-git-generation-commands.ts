@@ -3,6 +3,7 @@ import { getCommitMessageModelDiscoveryHostKey } from '../../shared/commit-messa
 import type { HostedReviewProvider } from '../../shared/hosted-review'
 import { withLinkedIssueDraftContext } from '../../shared/source-control-ai-action-variables'
 import type { TuiAgent } from '../../shared/tui-agent'
+import { resolveTuiAgentLaunchEnv } from '../../shared/tui-agent-launch-defaults'
 import { getStagedCommitContext } from '../git/status'
 import { SSH_HOST_NOT_SERVED_MESSAGE } from '../providers/ssh-host-not-served-error'
 import { loadPullRequestLinkedIssue } from '../source-control/pull-request-linked-issue'
@@ -233,11 +234,17 @@ export class RuntimeGitGenerationCommands {
       return { success: false, error: localEnv.error }
     }
     const localOptions = localGitOptionsForTarget(target)
-    return localOptions.wslDistro
-      ? discoverCommitMessageModelsLocal(typedAgentId, localEnv.env, agentCommandOverride, {
-          cwd: target.worktree.path,
-          wslDistro: localOptions.wslDistro
-        })
-      : discoverCommitMessageModelsLocal(typedAgentId, localEnv.env, agentCommandOverride)
+    return discoverCommitMessageModelsLocal(typedAgentId, localEnv.env, agentCommandOverride, {
+      cwd: target.worktree.path,
+      ...(localOptions.wslDistro ? { wslDistro: localOptions.wslDistro } : {}),
+      ...(agentId === 'opencode' || agentId === 'opencode2'
+        ? {
+            launchEnv: resolveTuiAgentLaunchEnv(
+              agentId,
+              this.host.getRuntimeSettings().agentDefaultEnv
+            )
+          }
+        : {})
+    })
   }
 }

@@ -78,6 +78,34 @@ describe('SSH retained payload admission', () => {
     expect(getUtf8ByteLength(detail ?? '')).toBe(SSH_CONNECTION_ERROR_MAX_UTF8_BYTES)
   })
 
+  it('admits the fenced serving reason alone and drops any other', () => {
+    const admit = (reason: unknown) =>
+      admitSshConnectionState(
+        {
+          targetId: 'ssh-a',
+          status: 'connected',
+          error: null,
+          reconnectAttempt: 0,
+          managedServer: {
+            kind: 'managed',
+            environmentId: 'env-1',
+            serving: { state: 'unverifiable', detail: 'held', reason }
+          }
+        },
+        'ssh-a'
+      )?.managedServer
+    expect(admit('fenced')).toEqual({
+      kind: 'managed',
+      environmentId: 'env-1',
+      serving: { state: 'unverifiable', detail: 'held', reason: 'fenced' }
+    })
+    expect(admit('from-the-future')).toEqual({
+      kind: 'managed',
+      environmentId: 'env-1',
+      serving: { state: 'unverifiable', detail: 'held' }
+    })
+  })
+
   it('keeps ordinary connection state while stripping unknown payload fields', () => {
     const admitted = admitSshConnectionState(
       {

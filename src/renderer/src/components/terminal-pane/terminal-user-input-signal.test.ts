@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { Terminal } from '@xterm/xterm'
 import {
   subscribeToTerminalInputData,
-  subscribeToTerminalUserInput
+  subscribeToTerminalUserInput,
+  subscribeToTerminalConversationInput,
+  withTerminalInputSource,
+  recordTerminalConversationInput
 } from './terminal-user-input-signal'
 
 type CoreServiceAccess = {
@@ -101,6 +104,75 @@ describe('subscribeToTerminalInputData', () => {
     subscription.dispose()
     core.triggerDataEvent('after-dispose', true)
     expect(listener).toHaveBeenCalledTimes(4)
+    terminal.dispose()
+  })
+})
+
+describe('subscribeToTerminalConversationInput', () => {
+  it('keeps raw PTY provenance while excluding programmatic writes from ownership', () => {
+    const terminal = new Terminal()
+    const conversation = vi.fn()
+    const raw = vi.fn()
+    const subscription = subscribeToTerminalConversationInput(terminal, conversation)
+    const input = subscribeToTerminalInputData(terminal, raw)
+
+    withTerminalInputSource(terminal, 'programmatic', () => terminal.input('prompt', true))
+    terminal.input('\x1b[?1;2c', false)
+    terminal.input('\x1b[<35;2;3M', true)
+    expect(conversation).not.toHaveBeenCalled()
+    terminal.input('text', true)
+    expect(conversation).toHaveBeenCalledTimes(1)
+    expect(raw.mock.calls).toEqual([
+      ['prompt', true],
+      ['\x1b[?1;2c', false],
+      ['\x1b[<35;2;3M', true],
+      ['text', true]
+    ])
+
+    subscription?.dispose()
+    input.dispose()
+    terminal.dispose()
+  })
+
+  it('restores nested source scopes after exceptions and isolates terminals', () => {
+    const terminal = new Terminal()
+    const other = new Terminal()
+    const conversation = vi.fn()
+    const otherConversation = vi.fn()
+    const subscription = subscribeToTerminalConversationInput(terminal, conversation)
+    const otherSubscription = subscribeToTerminalConversationInput(other, otherConversation)
+
+    expect(() =>
+      withTerminalInputSource(terminal, 'programmatic', () => {
+        other.input('independent user', true)
+        withTerminalInputSource(terminal, 'paste-event', () => terminal.input('user paste'))
+        terminal.input('programmatic tail', true)
+        throw new Error('paste failed')
+      })
+    ).toThrow('paste failed')
+    expect(conversation).toHaveBeenCalledTimes(1)
+    expect(otherConversation).toHaveBeenCalledTimes(1)
+    terminal.input('user after failure', true)
+    expect(conversation).toHaveBeenCalledTimes(2)
+
+    subscription?.dispose()
+    otherSubscription?.dispose()
+    terminal.dispose()
+    other.dispose()
+  })
+
+  it('preserves explicitly pasted report-shaped text and unregisters streamed-paste listeners', () => {
+    const terminal = new Terminal()
+    const conversation = vi.fn()
+    const subscription = subscribeToTerminalConversationInput(terminal, conversation)
+
+    withTerminalInputSource(terminal, 'paste-event', () => terminal.input('\x1b[<35;2;3M', true))
+    recordTerminalConversationInput(terminal)
+    expect(conversation).toHaveBeenCalledTimes(2)
+    subscription?.dispose()
+    recordTerminalConversationInput(terminal)
+    terminal.input('after disposal', true)
+    expect(conversation).toHaveBeenCalledTimes(2)
     terminal.dispose()
   })
 })

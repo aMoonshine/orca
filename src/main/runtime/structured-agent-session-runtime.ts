@@ -1,11 +1,8 @@
 // Where the structured agent-session wire becomes a live host on this runtime.
 //
-// Built on the first `agentSession.*` call rather than at startup: the record
-// store and the journal live under the profile's user-data path, which is not
-// final until Electron is ready, and a runtime that never serves a structured
-// session should not pay for a store it will never read. The slot the RPC layer
-// reads is module-level for the same reason the registry is — the runtime
-// service is already far past its size budget.
+// Built on the first session-addressed call: the record store and journal use the profile path,
+// final only when Electron is ready. Catalog-only reads leave both closed. The RPC host slot is
+// module-level like the registry; the runtime service is already past its size budget.
 //
 // A process whose journal will not open installs none and answers every
 // structured request with the refusal that says why.
@@ -52,13 +49,13 @@ import type { ClaudeStructuredAuthPolicy } from '../claude-accounts/claude-struc
 import type { StructuredAgentAdapterContext } from './structured-agent-runtime-registration-types'
 import { createStructuredAgentSessionLifecycleDelivery } from './structured-agent-session-lifecycle-delivery'
 import { createStructuredAgentSessionDispatchFollowUps } from './structured-agent-session-dispatch-followups'
-import { agentModelCatalogStore } from '../native-chat/agent-model-catalog/agent-model-catalog-store'
 import {
   neverThrowingStructuredAgentSessionLogger,
   type StructuredAgentSessionLogger
 } from '../native-chat/agent-session-wire/structured-agent-session-logger'
 import {
   modelCatalogHostDeps,
+  stopStructuredAgentModelCatalog,
   type RuntimeAgentAccountHomeResolver
 } from './structured-agent-model-catalog-wiring'
 import type { ClaudeCliFlagSupport } from '../claude/claude-cli-flag-support'
@@ -219,7 +216,7 @@ export async function stopStructuredAgentSessionRuntime(options?: {
       failures.push(error)
     }
   }
-  await agentModelCatalogStore.flushPersistence()
+  await stopStructuredAgentModelCatalog()
   if (failures.length === 1) {
     throw failures[0]
   }

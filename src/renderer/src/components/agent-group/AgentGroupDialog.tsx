@@ -39,7 +39,7 @@ import { AgentTeamControl } from './AgentTeamControl'
 import { AgentGroupInbox } from './AgentGroupInbox'
 import { EngineeringWorkflow } from './EngineeringWorkflow'
 import { loadGroupDraft, saveGroupDraft } from '@/lib/agent-group-draft'
-import { getAgentSessionOptionCatalog } from '../../../../shared/agent-session-option-catalog'
+import { groupProviderOptions, groupWorkerCanLaunch } from '@/lib/agent-group-provider-options'
 
 const MODE_COPY: Record<AgentWorkMode, string> = {
   solo: 'One agent carries out a task.',
@@ -69,13 +69,15 @@ export function AgentGroupDialog({
   const [draft] = useState(() => loadGroupDraft(draftKey))
   const [selectedMode, setMode] = useState<AgentWorkMode>(draft?.mode ?? 'swarm')
   const [objective, setObjective] = useState(draft?.objective ?? '')
+  const providers = useMemo(() => groupProviderOptions(options), [options])
+  const initial = providers.find((option) => !option.disabled)?.agent
   const [workers, setWorkers] = useState<GroupWorker[]>(
     () =>
       draft?.workers ??
-      (options[0]
+      (initial
         ? [
-            { id: createBrowserUuid(), agent: options[0].agent, spec: '', claims: '' },
-            { id: createBrowserUuid(), agent: options[0].agent, spec: '', claims: '' }
+            { id: createBrowserUuid(), agent: initial, spec: '', claims: '' },
+            { id: createBrowserUuid(), agent: initial, spec: '', claims: '' }
           ]
         : [])
   )
@@ -90,15 +92,27 @@ export function AgentGroupDialog({
     visibleWorkers.every(
       (worker) =>
         worker.spec.trim() &&
-        options.some((option) => option.agent === worker.agent) &&
-        (!getAgentSessionOptionCatalog(worker.agent)?.supportsWorkerLaunchPreferences ||
-          worker.model?.trim()) &&
+        groupWorkerCanLaunch(worker, providers) &&
         (!phase.allowsFileClaims || mode === 'solo' || worker.claims.trim())
     )
 
   useEffect(() => {
     void controller.refresh()
   }, [controller])
+  useEffect(() => {
+    if (initial) {
+      setWorkers((current) =>
+        current.length
+          ? current
+          : Array.from({ length: 2 }, () => ({
+              id: createBrowserUuid(),
+              agent: initial,
+              spec: '',
+              claims: ''
+            }))
+      )
+    }
+  }, [initial])
   useEffect(() => {
     saveGroupDraft(draftKey, { mode: selectedMode, objective, workers })
   }, [draftKey, selectedMode, objective, workers])
@@ -151,7 +165,7 @@ export function AgentGroupDialog({
             <AgentTeamControl
               target={target}
               worktreeId={worktreeId}
-              options={options}
+              options={providers}
               onClose={onClose}
             />
           ) : (
@@ -190,7 +204,7 @@ export function AgentGroupDialog({
                   </Label>
                   <Select
                     value={String(visibleWorkers.length)}
-                    disabled={snapshot.busy || limit === 1 || options.length === 0}
+                    disabled={snapshot.busy || limit === 1 || !initial}
                     onValueChange={(value) => setCount(Number(value))}
                   >
                     <SelectTrigger id="agent-group-count" className="w-full">
@@ -225,7 +239,7 @@ export function AgentGroupDialog({
                   </p>
                 )}
               </div>
-              {options.length === 0 ? (
+              {!initial ? (
                 <p role="status">
                   {translate(
                     'agentGroup.noAgents',
@@ -252,7 +266,7 @@ export function AgentGroupDialog({
                   <EngineeringWorkflow
                     worktreeId={worktreeId}
                     objective={objective}
-                    options={options}
+                    options={providers.filter((option) => !option.disabled)}
                     disabled={snapshot.busy}
                     onClose={onClose}
                   />
@@ -260,7 +274,7 @@ export function AgentGroupDialog({
                     target={target}
                     worktreeId={worktreeId}
                     workers={visibleWorkers}
-                    options={options}
+                    options={providers}
                     writable={phase.allowsFileClaims}
                     disabled={snapshot.busy}
                     onChange={setWorkers}

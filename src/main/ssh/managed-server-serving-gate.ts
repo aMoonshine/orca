@@ -1,5 +1,6 @@
 /** Whether a connect's serving check ends it, or lets the update check run (and redeploy). */
 import type { HostServerUpdateOnConnect } from './managed-server-update-check'
+import type { SshManagedServerServingNote } from '../../shared/ssh-types'
 import {
   MANAGED_ORCAD_FENCED_DETAIL,
   MANAGED_ORCAD_NOT_ACTIVATED_DETAIL,
@@ -8,6 +9,17 @@ import {
 import type { HostServerOnConnectResult } from './ssh-host-server-on-connect'
 
 type ManagedRoute = Extract<HostServerOnConnectResult, { route: 'managed' }>
+
+/** The published note for a server that did not answer, naming the fence when one held it. */
+function servingNote(
+  serving: Extract<OrcadManagedServing, { state: 'unverifiable' }>
+): SshManagedServerServingNote {
+  return {
+    state: 'unverifiable',
+    detail: serving.detail,
+    ...(serving.detail === MANAGED_ORCAD_FENCED_DETAIL ? { reason: 'fenced' as const } : {})
+  }
+}
 
 /**
  * The managed result for a server that is not serving, or null when the update check runs next.
@@ -25,7 +37,7 @@ export function unservedManagedResult(
   return {
     route: 'managed',
     environmentId,
-    serving,
+    serving: servingNote(serving),
     ...(serving.detail === MANAGED_ORCAD_FENCED_DETAIL ? { fenceHeld: true as const } : {})
   }
 }
@@ -40,7 +52,9 @@ export function managedResultAfterUpdate(
     route: 'managed',
     environmentId,
     ...(note ? { update: note } : {}),
-    ...(serving.state === 'unverifiable' && reason !== 'updated' ? { serving } : {}),
+    ...(serving.state === 'unverifiable' && reason !== 'updated'
+      ? { serving: servingNote(serving) }
+      : {}),
     ...(fenceBusy ? { fenceHeld: true as const } : {})
   }
 }

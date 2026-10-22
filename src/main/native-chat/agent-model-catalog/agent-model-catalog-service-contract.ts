@@ -40,6 +40,8 @@ export type AgentModelCatalogService = {
     /** With no entry yet, answer from the listing this read starts or joins instead of `unknown`;
      *  with a held reason past its TTL, from the probe re-checking it. */
     waitForListing?: boolean
+    /** Re-probe this resolved scope even while its success or failure is fresh, and await it. */
+    forceRefresh?: boolean
     /** Answer only from the saved entry and held reason; start, join or re-check no listing. */
     savedOnly?: boolean
     verifiedOnly?: boolean

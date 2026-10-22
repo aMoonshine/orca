@@ -11,6 +11,11 @@ import { OrchestrationError } from '../../orchestration-error'
 import type { RunRow } from '../../types'
 import { generateId } from '../generated-id'
 import type { OrchestrationDb } from '../orchestration-db'
+import {
+  beginLifecycleWriteTransaction,
+  commitLifecycleWriteTransaction,
+  rollbackLifecycleWriteTransaction
+} from '../lifecycle-transition'
 
 export type RunPhaseRow = {
   id: string
@@ -89,10 +94,11 @@ export function setRunWorkMode(
   if (!isAgentWorkMode(params.mode)) {
     throw new OrchestrationError('invalid_argument', `Unknown work mode ${String(params.mode)}.`)
   }
-  this.requireRun(params.runId)
   const phase = firstPhaseFor(params.mode)
-  this.db.exec('BEGIN IMMEDIATE')
+  const transaction = beginLifecycleWriteTransaction(this.db, 'set_run_work_mode')
   try {
+    this.requireRun(params.runId)
+    requireSettledRunWriters.call(this, params.runId)
     this.db
       .prepare(
         "UPDATE runs SET mode = ?, mode_phase = ?, mode_phase_round = 1, updated_at = datetime('now') WHERE id = ?"
@@ -106,9 +112,9 @@ export function setRunWorkMode(
       advancedBy: params.advancedBy,
       note: params.note ?? ''
     })
-    this.db.exec('COMMIT')
+    commitLifecycleWriteTransaction(this.db, transaction)
   } catch (error) {
-    this.db.exec('ROLLBACK')
+    rollbackLifecycleWriteTransaction(this.db, transaction)
     throw error
   }
   return this.getRunWorkMode(params.runId)
@@ -126,9 +132,10 @@ export function advanceRunPhase(
   this: OrchestrationDb,
   params: { runId: string; advancedBy?: string; note?: string }
 ): RunWorkMode {
-  const current = this.getRunWorkMode(params.runId)
-  this.db.exec('BEGIN IMMEDIATE')
+  const transaction = beginLifecycleWriteTransaction(this.db, 'advance_run_phase')
   try {
+    const current = this.getRunWorkMode(params.runId)
+    requireSettledRunWriters.call(this, params.runId)
     const next = nextPhaseFor(current.mode, current.phaseId)
     if (next) {
       this.db
@@ -144,7 +151,7 @@ export function advanceRunPhase(
         advancedBy: params.advancedBy,
         note: params.note ?? ''
       })
-      this.db.exec('COMMIT')
+      commitLifecycleWriteTransaction(this.db, transaction)
       return this.getRunWorkMode(params.runId)
     }
     if (!phaseAllowsAnotherRound(current.definition, current.round)) {
@@ -165,9 +172,9 @@ export function advanceRunPhase(
       advancedBy: params.advancedBy,
       note: params.note ?? ''
     })
-    this.db.exec('COMMIT')
+    commitLifecycleWriteTransaction(this.db, transaction)
   } catch (error) {
-    this.db.exec('ROLLBACK')
+    rollbackLifecycleWriteTransaction(this.db, transaction)
     throw error
   }
   return this.getRunWorkMode(params.runId)
@@ -178,6 +185,28 @@ const MODE_LABEL: Record<AgentWorkMode, string> = {
   fusion: 'Fusion',
   orchestrator: 'Orchestrator',
   swarm: 'Swarm'
+}
+
+function requireSettledRunWriters(this: OrchestrationDb, runId: string): void {
+  const active = this.db
+    .prepare(
+      `SELECT 1 FROM worker_dispatches wd
+     JOIN dispatch_contexts dc ON dc.id = wd.dispatch_id
+     WHERE dc.run_id = ?
+       AND wd.state IN ('starting', 'ready', 'start_unknown', 'stopping', 'stop_unknown')
+     LIMIT 1`
+    )
+    .get(runId)
+  const held = this.db
+    .prepare('SELECT 1 FROM worker_file_claims WHERE run_id = ? LIMIT 1')
+    .get(runId)
+  if (active || held) {
+    throw new OrchestrationError(
+      'run_phase_workers_active',
+      'Settle active or uncertain workers and release held file claims before changing the Run mode or phase.',
+      { effectsApplied: false, runId }
+    )
+  }
 }
 
 function recordPhaseEvent(

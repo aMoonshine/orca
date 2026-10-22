@@ -8,6 +8,8 @@ one question per turn, records terminology in `GLOSSARY.md` and decisions in
 agent guidance, not a filesystem sandbox or an enforced approval gate.
 
 The same selector exposes all 20 skills from Matt Pocock's engineering folder.
+The bundled catalog contains 22 skills in total, including the two productivity
+dependencies described below; the source files and provenance remain tracked.
 Implementation workflows may edit code; choose them after planning. Workflow
 context is supplied in the initial prompt, so the provider does not need a
 proprietary Skill tool. Continue the discussion in the new agent tab. For a new

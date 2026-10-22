@@ -5,6 +5,7 @@ import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import { launchAgentInNewTab } from './launch-agent-in-new-tab'
 import { buildAgentTeamPrompt } from '../../../shared/agent-team-prompt'
 import type { TuiAgent } from '../../../shared/tui-agent'
+import { getAgentSessionOptionCatalog } from '../../../shared/agent-session-option-catalog'
 
 const savedSchema = z.object({ tabId: z.string(), handle: z.string().optional() })
 export type TeamSession = z.infer<typeof savedSchema>
@@ -35,8 +36,12 @@ export async function startAgentTeam(args: {
     )
   }
   const prompt = buildAgentTeamPrompt(args)
-  if (!args.leaderModel.trim()) {
+  const supportsModel = !!getAgentSessionOptionCatalog(args.leader)?.supportsWorkerLaunchPreferences
+  if (supportsModel && !args.leaderModel.trim()) {
     throw new Error('Choose an exact model for the master agent.')
+  }
+  if (!supportsModel && args.leaderModel.trim()) {
+    throw new Error('This master agent does not support an explicit model override.')
   }
   const result = launchAgentInNewTab({
     agent: args.leader,
@@ -44,7 +49,7 @@ export async function startAgentTeam(args: {
     requestId: newAgentLaunchRequestId(),
     quickCommandLabel: 'Master chat',
     worktreeId: args.worktreeId,
-    sessionOptions: { model: args.leaderModel },
+    sessionOptions: supportsModel ? { model: args.leaderModel } : undefined,
     beforeSurfaceOpen: (surface) => surface.kind !== 'host-published'
   })
   if (!result || result.surface.kind === 'host-published') {

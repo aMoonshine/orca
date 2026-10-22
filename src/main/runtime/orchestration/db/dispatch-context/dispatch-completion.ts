@@ -35,6 +35,7 @@ export function completeDispatch(this: OrchestrationDb, ctxId: string): void {
     // demanding input after the work was done.
     this.closeQuestionsForDispatch(ctxId)
     settleWorkerForCompletedDispatch(this.db, ctxId)
+    this.releaseFileClaimsForDispatch(ctxId)
     this.db.exec('RELEASE complete_dispatch_transition')
   } catch (error) {
     this.db.exec('ROLLBACK TO complete_dispatch_transition')
@@ -75,6 +76,7 @@ export function settleActiveDispatchesForTask(
       })
       db.closeQuestionsForDispatch(row.id)
       settleWorkerForCompletedDispatch(db.db, row.id)
+      db.releaseFileClaimsForDispatch(row.id)
     }
     commitLifecycleWriteTransaction(db.db, transaction)
   } catch (error) {
@@ -227,6 +229,7 @@ export function failDispatch(
     const updated = this.db.prepare('SELECT * FROM dispatch_contexts WHERE id = ?').get(ctxId) as
       | DispatchContextRow
       | undefined
+    this.releaseFileClaimsForDispatch(ctxId)
     commitLifecycleWriteTransaction(this.db, transaction)
     return updated
   } catch (cause) {

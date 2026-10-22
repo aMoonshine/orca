@@ -123,6 +123,36 @@ describe('registerFilesystemHandlers', () => {
     )
   })
 
+  it('passes a plain OpenCode folder and configured launch environment to discovery', async () => {
+    const folderPath = path.resolve('/outside-workspace/opencode-folder')
+    const folderStore = {
+      ...store,
+      getSettings: () => ({
+        workspaceDir: WORKSPACE_DIR,
+        agentCmdOverrides: { opencode: '/configured/opencode' },
+        agentDefaultEnv: { opencode: { OPENCODE_CONFIG_CONTENT: '{"provider":{}}' } }
+      }),
+      getFolderWorkspaces: () => [
+        { id: 'plain', projectGroupId: 'group', folderPath, connectionId: null }
+      ]
+    }
+    discoverCommitMessageModelsLocalMock.mockResolvedValue({ success: true, models: [] })
+    registerFilesystemHandlers(folderStore as never)
+    await handlers.get('git:discoverCommitMessageModels')!(null, {
+      agentId: 'opencode',
+      worktreePath: folderPath
+    })
+    expect(discoverCommitMessageModelsLocalMock).toHaveBeenCalledWith(
+      'opencode',
+      undefined,
+      '/configured/opencode',
+      {
+        cwd: folderPath,
+        launchEnv: { OPENCODE_CONFIG_CONTENT: '{"provider":{}}' }
+      }
+    )
+  })
+
   it('does not authorize remote-only folder roots as local discovery paths', async () => {
     const folderPath = path.resolve('/remote-only/folder-project')
     const folderStore = {

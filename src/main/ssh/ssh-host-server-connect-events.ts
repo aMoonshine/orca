@@ -45,6 +45,9 @@ export type HostServerUpdateReason =
   | 'update_host_newer'
   | 'update_rolled_back'
   | 'update_check_failed'
+  /** Version skew: this build carries no server for the host, or a move is still finishing. */
+  | 'update_no_template'
+  | 'update_migrating'
 
 /** How far one decision got, filled in as it runs. */
 export type HostServerDecisionTrace = {

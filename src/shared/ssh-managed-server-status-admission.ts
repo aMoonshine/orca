@@ -42,7 +42,13 @@ export function admitSshManagedServerStatus(value: unknown): {
         ? {
             serving: {
               state: 'unverifiable' as const,
-              detail: clampUtf8TextPrefix(value.serving.detail, SSH_CONNECTION_ERROR_MAX_UTF8_BYTES)
+              detail: clampUtf8TextPrefix(
+                value.serving.detail,
+                SSH_CONNECTION_ERROR_MAX_UTF8_BYTES
+              ),
+              ...('reason' in value.serving && value.serving.reason === 'fenced'
+                ? { reason: 'fenced' as const }
+                : {})
             }
           }
         : {}

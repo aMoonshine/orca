@@ -3,17 +3,16 @@ import { AGENT_SESSION_COHERENT_MODEL_CATALOG_CAPABILITY } from '../../../../sha
 // host's stored model catalog behind the picker.
 //
 // `agentSession.options` answers at rest from the record and the catalog, and
-// asks the live provider only when one runs. `agentSession.modelCatalog` deliberately does
-// neither — answering from the host store (and what a running child's start already said) is
-// what lets a picker render while an attach is still running. It is additive: an older host answers
+// asks the live provider only when one runs. `agentSession.modelCatalog` uses the host's
+// independent catalog service, which can list before any chat opens its journal.
+// It is additive: an older host answers
 // `method_not_found` (or `forbidden` through the mobile allowlist gate), and
 // the client keeps its static seed.
 
 import { defineMethod } from '../core'
 import {
   requireInstalledStructuredHost,
-  requireStructuredAgentAudience,
-  requireStructuredHost
+  requireStructuredAgentAudience
 } from './structured-agent-session-gate'
 import {
   HandoffStatusParams,
@@ -26,6 +25,7 @@ import { clientReadsOptionsWithoutModel } from './structured-agent-session-polic
 import type { AgentSessionModelCatalogResult } from '../../../../shared/agent-session-wire'
 import { structuredAgentSessionOptionModels } from '../../../native-chat/agent-session-wire/structured-agent-session-option-models'
 import { finishedListingIds } from '../../../../shared/structured-agent-session-options'
+import { getStructuredAgentSessionHost } from '../../../native-chat/agent-session-wire/structured-agent-session-registry'
 
 export const STRUCTURED_AGENT_SESSION_OPTIONS_READ_METHODS = [
   defineMethod({
@@ -69,16 +69,18 @@ export const STRUCTURED_AGENT_SESSION_OPTIONS_READ_METHODS = [
       requireStructuredAgentAudience(ctx, params.agent)
       const host =
         params.sessionId === undefined
-          ? requireStructuredHost(ctx)
+          ? getStructuredAgentSessionHost()
           : await requireInstalledStructuredHost(ctx, params.sessionId)
       const record =
-        params.sessionId === undefined ? null : host.deps.store.getRecord(params.sessionId)
+        params.sessionId === undefined ? null : host?.deps.store.getRecord(params.sessionId)
       const coherent =
         ctx.clientKind === undefined ||
         ctx.clientCapabilities?.includes(AGENT_SESSION_COHERENT_MODEL_CATALOG_CAPABILITY) === true
       const scope = coherent ? {} : { legacy: true }
       const read = async (): Promise<AgentSessionModelCatalogResult> => {
-        const catalog = host.deps.modelCatalog
+        const catalog = host
+          ? host.deps.modelCatalog
+          : await ctx.runtime.getStructuredAgentModelCatalog()
         if (!catalog) {
           return { origin: 'unknown' }
         }
@@ -93,6 +95,9 @@ export const STRUCTURED_AGENT_SESSION_OPTIONS_READ_METHODS = [
         const workspacePath = await ctx.runtime
           .resolveStructuredAgentSessionLocalWorkspacePath(worktree)
           .catch(() => null)
+        if (!workspacePath) {
+          return { origin: 'unknown' }
+        }
         return catalog.read({ ...params, ...scope, workspacePath })
       }
       const listing = await read()

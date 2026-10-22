@@ -16,10 +16,12 @@ unknown outcome. **Open master chat** returns to that session. **Detach saved te
 removes only the shortcut; it does not stop or reassign existing agents.
 
 Workers appear automatically beside the master in separate resizable panels.
-Each new panel splits the largest existing team panel. The existing split-tree,
-dragging and terminal sessions are reused. The master retains settled workers so
-you can give them new instructions directly. Switching projects keeps their work
-running; automatic arrangement follows the currently visible workspace.
+When team membership changes, Orca rearranges the team's panels into equal areas.
+The existing split-tree, dragging and terminal sessions are reused. After verifying
+a worker's result, the master closes its panel with `worker-release`. It keeps the
+session when continuing authorized work there or when you ask to keep it. The master
+chat and sessions you took over stay open unless you ask to close them. Switching
+projects keeps work running; arrangement follows the currently visible workspace.
 
 The existing workspace kanban has an **Active team tasks** view. It projects the
 current master's real Task rows into To do, In progress, Reported and Needs attention.
@@ -32,7 +34,9 @@ master's inbox until handled. The UI does not infer failure from a missing host.
 Local and SSH terminal launches reuse Orca's existing launch routing. A paired
 browser/host-published master launch is currently refused before opening a surface;
 it never falls back to the local machine. Real Windows validation used OpenCode
-1.18.34 and `opencode/space-bunny-free`; other providers still need their own login.
+1.18.34 and `opencode/space-bunny-free` in an earlier smoke test. The current
+source installer pins 1.18.32; that earlier test does not validate the current pin.
+Other providers still need their own login.
 
 React Grab's development picker is now opt-in: set `VITE_ENABLE_REACT_GRAB=true`
 before starting the development app to restore it.
@@ -83,10 +87,21 @@ to…** and write the next wave's tasks. Refresh also lets the user see updated
 results. **Group messages** shows the Run's messages and supports answers to worker
 questions. This UI does not automatically judge reports or advance phases.
 
+The coordinator agrees interfaces and records the work order in task instructions
+or project documents, then passes it to later workers and the integrator. Orca does
+not publish, freeze, or enforce standing decision contracts. Upstream decision
+gates remain a separate orchestration feature.
+
 Writable group phases require each worker's **Owned paths**, separated by commas.
 The existing orchestration claim store rejects conflicting paths before opening
 a worker terminal. Read-only phases omit claims and instruct agents not to edit;
-the filesystem itself is not sandboxed by this feature.
+the filesystem itself is not sandboxed by this feature. Claim admission applies
+within one Run and workspace, rather than across all Runs.
+
+Modes and claims are supported when the workspace's owning runtime handles the
+worker launch, including SSH workspaces. A federated `worker-start --on` launch
+currently supports only Solo without file claims: other modes or nonempty claims
+are refused before launch because federation cannot preserve their guarantees.
 
 ## Partial starts and recovery
 
@@ -102,9 +117,10 @@ group. If its binding is gone, the UI reports the problem instead of taking over
 another Run. **New group** starts a fresh form context; it does not stop previous
 agents. Existing terminal/CLI recovery and release commands remain available.
 
-Worker terminals appear in split panels automatically. Additional workers split
-the largest existing group panel. Existing terminal sessions
-are moved, not restarted. Resize the dividers or drag panels to change the layout.
+Worker terminals appear in split panels automatically. When group membership
+changes, Orca rearranges the group panels into equal areas. Existing terminal
+sessions are moved, not restarted. Resize the dividers or drag panels to change the
+layout; the next membership change may rearrange them again.
 The launch dialog closes after a successful wave. Reopen **Launch agents** to read
 tasks, group messages, and advance the phase. Failed starts keep the dialog open,
 show their failed stage and error, and refresh task state from the execution host.
@@ -115,7 +131,7 @@ Agents run as terminal CLIs inside Orca. The OpenCode desktop executable is not 
 CLI, although Windows can resolve both through the name `opencode`. Launches with an explicit model use upstream execution-host capability and model-availability checks.
 
 The source launcher supports `tools\orca-dev.cmd install-opencode`. This installs
-OpenCode CLI 1.18.34 under `tools/runtime/opencode-cli` and prepends its binary folder
+OpenCode CLI 1.18.32 under `tools/runtime/opencode-cli` and prepends its binary folder
 only for Orca's process tree. It does not change the global Windows PATH. Restart
 Orca through the launcher after installation. `doctor` reports the resolved path.
 The runtime folder is ignored by Git; the installer and pinned version are tracked.

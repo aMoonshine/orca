@@ -1,6 +1,10 @@
 import { spawn } from 'node:child_process'
 import type * as ChildProcess from 'node:child_process'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { npmProgNodeShim } from '../../packages/process-host/src/__fixtures__/windows-cmd-shim-bodies'
 import { discoverCommitMessageModelsLocal } from './commit-message-text-generation'
 import { PROVIDER_SPAWN_FAILURE_MARKER } from '../provider-process/provider-spawn-failure-report'
 import {
@@ -227,6 +231,25 @@ describe('discoverCommitMessageModelsLocal on the Windows direct-child path', ()
       configurable: true,
       value: hostPlatform
     })
+    let fixtureNode: string | undefined
+    let fixtureNpx: string | undefined
+    if (hostPlatform === 'win32') {
+      const fixtureDir = mkdtempSync(join(tmpdir(), 'orca-model-discovery-npx-'))
+      onTestFinished(() => rmSync(fixtureDir, { recursive: true, force: true }))
+      fixtureNode = join(fixtureDir, 'node.exe')
+      fixtureNpx = join(fixtureDir, 'node_modules', 'npm', 'bin', 'npx-cli.js')
+      mkdirSync(join(fixtureDir, 'node_modules', 'npm', 'bin'), { recursive: true })
+      // Spawn is mocked; these files only participate in real shim resolution.
+      writeFileSync(fixtureNode, '')
+      writeFileSync(fixtureNpx, '')
+      writeFileSync(
+        join(fixtureDir, 'npx.cmd'),
+        npmProgNodeShim('node_modules\\npm\\bin\\npx-cli.js')
+      )
+      vi.stubEnv('PATH', fixtureDir)
+      vi.stubEnv('PATHEXT', '.EXE;.CMD')
+      vi.stubEnv('ORCA_DISABLE_CMD_SHIM_RESOLUTION', '')
+    }
     const listeners = new Map<string, (value: unknown) => void>()
     const child = {
       pid: 123,
@@ -254,8 +277,8 @@ describe('discoverCommitMessageModelsLocal on the Windows direct-child path', ()
     if (process.platform === 'win32') {
       // npx.cmd is an npm shim, so process-host runs it as node + npx-cli.js, never cmd.exe.
       expect(spawnMock).toHaveBeenCalledWith(
-        expect.stringMatching(/node\.exe$/i),
-        [expect.stringMatching(/npx-cli\.js$/i), 'cursor-agent', '--list-models'],
+        fixtureNode,
+        [fixtureNpx, 'cursor-agent', '--list-models'],
         expect.objectContaining({ windowsHide: true })
       )
     } else {

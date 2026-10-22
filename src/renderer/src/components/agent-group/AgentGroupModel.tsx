@@ -1,5 +1,10 @@
-import { useEffect, useState } from 'react'
-import { z } from 'zod'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  agentGroupModelDiscoveryContextKey,
+  loadAgentGroupModels,
+  type GroupModel
+} from '@/lib/agent-group-model-discovery'
+import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,72 +16,10 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 import { getAgentSessionOptionCatalog } from '../../../../shared/agent-session-option-catalog'
 import type { GroupWorker } from '@/lib/agent-group-launch'
 import { translate } from '@/i18n/i18n'
-import { useAppStore } from '@/store'
-import { getConnectionIdFromState } from '@/lib/connection-context'
-import { findFolderWorkspaceOwner } from '@/lib/folder-workspace-runtime-owner'
-import { parseWorkspaceKey } from '../../../../shared/workspace-scope'
-
-const resultSchema = z.object({
-  success: z.boolean(),
-  error: z.string().optional(),
-  models: z.array(z.object({ id: z.string(), label: z.string() })).optional()
-})
-type Model = { id: string; label: string }
-const pending = new Map<string, Promise<Model[]>>()
-async function readModels(
-  target: RuntimeClientTarget,
-  worktreeId: string,
-  agentId: string
-): Promise<unknown> {
-  const workspace = parseWorkspaceKey(worktreeId)
-  if (target.kind === 'local' && workspace?.type === 'folder') {
-    const state = useAppStore.getState()
-    const owner = findFolderWorkspaceOwner(state, workspace.folderWorkspaceId)
-    const folder = state.folderWorkspaces.find((entry) => entry === owner)
-    const connectionId = getConnectionIdFromState(state, worktreeId)
-    if (!folder || connectionId === undefined) {
-      throw new Error('The workspace host is unavailable.')
-    }
-    return window.api.git.discoverCommitMessageModels({
-      agentId,
-      worktreePath: folder.folderPath,
-      connectionId: connectionId ?? undefined
-    })
-  }
-  return callRuntimeRpc(
-    target,
-    'git.discoverCommitMessageModels',
-    { worktree: `id:${worktreeId}`, agentId },
-    { timeoutMs: 75_000 }
-  )
-}
-function loadModels(
-  target: RuntimeClientTarget,
-  worktreeId: string,
-  agent: string
-): Promise<Model[]> {
-  const key = JSON.stringify([target, worktreeId, agent])
-  const existing = pending.get(key)
-  if (existing) {
-    return existing
-  }
-  const request = readModels(target, worktreeId, agent)
-    .then((raw) => {
-      const result = resultSchema.parse(raw)
-      if (!result.success) {
-        throw new Error(result.error ?? 'Model discovery failed.')
-      }
-      return result.models ?? []
-    })
-    .finally(() => pending.delete(key))
-  pending.set(key, request)
-  return request
-}
 
 export function AgentGroupModel({
   worker,
@@ -94,10 +37,18 @@ export function AgentGroupModel({
   onApplyAll: () => void
 }) {
   const supported = !!getAgentSessionOptionCatalog(worker.agent)?.supportsWorkerLaunchPreferences
-  const [models, setModels] = useState<Model[]>([])
+  const [models, setModels] = useState<GroupModel[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [revision, setRevision] = useState(0)
+  const environmentId = target.kind === 'environment' ? target.environmentId : null
+  const discoveryTarget = useMemo<RuntimeClientTarget>(
+    () => (environmentId === null ? { kind: 'local' } : { kind: 'environment', environmentId }),
+    [environmentId]
+  )
+  const catalogContext = useAppStore((state) =>
+    agentGroupModelDiscoveryContextKey(discoveryTarget, state.settings)
+  )
   useEffect(() => {
     let stale = false
     setModels([])
@@ -106,7 +57,9 @@ export function AgentGroupModel({
       return
     }
     setLoading(true)
-    void loadModels(target, worktreeId, worker.agent)
+    void loadAgentGroupModels(discoveryTarget, worktreeId, worker.agent, {
+      forceRefresh: revision > 0
+    })
       .then((rows) => {
         if (!stale) {
           setModels(rows)
@@ -125,7 +78,7 @@ export function AgentGroupModel({
     return () => {
       stale = true
     }
-  }, [supported, target, worktreeId, worker.agent, revision])
+  }, [supported, discoveryTarget, worktreeId, worker.agent, revision, catalogContext])
   if (!supported) {
     return (
       <p className="text-xs text-muted-foreground">

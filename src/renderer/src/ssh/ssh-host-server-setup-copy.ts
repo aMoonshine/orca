@@ -2,6 +2,13 @@
 import type { SSH_MANAGED_SERVER_PHASES } from '../../../shared/ssh-types'
 import { translate } from '@/i18n/i18n'
 
+export function serverNotIncludedText(): string {
+  return translate(
+    'auto.components.settings.sshHostServer.serverNotIncluded',
+    'This Orca build doesn’t include the server needed for SSH connections. Use an Orca build that includes the server, then reconnect.'
+  )
+}
+
 /** Users read "server" as someone else's machine; this says where Orca runs and what moves. */
 export function sshHostServerReassurance(host: string): string {
   return translate(

@@ -1,6 +1,6 @@
 import type { MessageRow, QuestionRow } from '../../types'
 import { OrchestrationError } from '../../orchestration-error'
-import { exposeQuestionTimestamps } from '../utc-timestamp'
+import { exposeMessageListTimestamps, exposeQuestionTimestamps } from '../utc-timestamp'
 import type { OrchestrationDb } from '../orchestration-db'
 
 export function createQuestion(
@@ -68,6 +68,20 @@ export function getQuestionRaw(this: OrchestrationDb, messageId: string): Questi
   return this.db.prepare('SELECT * FROM question_threads WHERE message_id = ?').get(messageId) as
     | QuestionRow
     | undefined
+}
+
+export function getPendingRunQuestions(this: OrchestrationDb, runId: string): MessageRow[] {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: m.* returns message rows; the join restricts them to open Run questions.
+  const messages = this.db
+    .prepare(
+      `SELECT m.* FROM question_threads q
+       JOIN messages m ON m.id = q.message_id
+       WHERE q.run_id = ? AND q.status = 'pending'
+         AND m.run_id = ? AND m.to_handle = ? AND m.delivery_contract = 'current_delivery'
+       ORDER BY m.sequence`
+    )
+    .all(runId, runId, `run:${runId}`) as MessageRow[]
+  return exposeMessageListTimestamps(messages)
 }
 
 export function answerQuestion(
@@ -161,6 +175,7 @@ export type QuestionThreadsMethods = {
   createQuestion: typeof createQuestion
   getQuestion: typeof getQuestion
   getQuestionRaw: typeof getQuestionRaw
+  getPendingRunQuestions: typeof getPendingRunQuestions
   answerQuestion: typeof answerQuestion
   closeQuestionsForDispatch: typeof closeQuestionsForDispatch
 }
@@ -170,6 +185,7 @@ export function attachQuestionThreads(ctor: { prototype: object }): void {
     createQuestion,
     getQuestion,
     getQuestionRaw,
+    getPendingRunQuestions,
     answerQuestion,
     closeQuestionsForDispatch
   })

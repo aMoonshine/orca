@@ -35,7 +35,13 @@ import { releaseRetriedWorkerTerminal } from './retried-worker-terminal-release'
 import { requireWorkerAuthority, type WorkerEffect } from './worker-topology'
 import { prepareLocalWorkerStart } from './worker-start-validation'
 import { deliverAndSettleWorkerStartReadiness } from './worker-start-readiness-settlement'
-import { claimWorkerStartFiles, type WorkerFileClaimOutcome } from './worker-start-file-claims'
+import {
+  bindWorkerStartFiles,
+  claimWorkerStartFiles,
+  parseClaimPaths,
+  reserveWorkerStartFiles,
+  type WorkerFileClaimOutcome
+} from './worker-start-file-claims'
 const EMPTY_FILE_CLAIMS: WorkerFileClaimOutcome = { claims: [], ownedByOthers: [] }
 
 import type { WorkerStartMutation } from './worker-start-mutation'
@@ -172,19 +178,22 @@ export async function startLocalWorker(args: {
   releaseRetriedWorkerTerminal(runtime, db, params)
   const effects: WorkerEffect[] = []
   const task = started.task
-  // Why before placement: a worker refused for claiming a peer's file must fail with
-  // no terminal created, no agent launched, and no prompt sent. The dispatch row already
-  // exists, so the teardown below reclaims it the same way as any other early failure.
+  // Existing workspaces reject conflicts before launch; new ones reserve until placement.
   let fileClaims: WorkerFileClaimOutcome = EMPTY_FILE_CLAIMS
   try {
-    fileClaims = claimWorkerStartFiles({
+    const claimArgs = {
       db,
       runId: run.id,
       dispatchId: started.dispatch.id,
-      workspaceId: resolvedWorktree?.id ?? '',
-      workspacePath: existingWorkspace?.path ?? '',
       claims: params.claims
-    })
+    }
+    fileClaims = existingWorkspace
+      ? claimWorkerStartFiles({
+          ...claimArgs,
+          workspaceId: existingWorkspace.id,
+          workspacePath: existingWorkspace.path
+        })
+      : reserveWorkerStartFiles(claimArgs)
   } catch (error) {
     return failWorkerStartWithReceipt({
       db,
@@ -240,6 +249,18 @@ export async function startLocalWorker(args: {
       effects
     }
     recordCreatedWorkerTerminalCustody(runtime, setupStage, !params.terminal && !structuredSession)
+    if (createsWorktree && parseClaimPaths(params.claims).length > 0) {
+      failedStage = 'file_claim'
+      const workspace = await runtime.showManagedTerminalWorkspace(`id:${resolvedWorktree.id}`)
+      fileClaims = bindWorkerStartFiles({
+        db,
+        runId: run.id,
+        dispatchId: started.dispatch.id,
+        workspaceId: workspace.id,
+        workspacePath: workspace.path,
+        claims: params.claims
+      })
+    }
     if (persistGatedSetupSpawnFailure(setupStage)) {
       failedStage = 'setup_start'
       throw new Error('Setup terminal failed to start before the gated agent launch.')

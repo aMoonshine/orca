@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type Database from '../../sqlite/sync-database'
 import { OrchestrationDb } from './db'
 import { createRootDispatch } from './db/root-dispatch-test-fixture'
+import { AGENT_PROMPT_STALLED_ERROR } from '../agent-prompt-submission-verification'
 
 type WorkerFixture = {
   dispatchId: string
@@ -26,6 +27,150 @@ afterEach(() => {
 })
 
 describe('Task/Dispatch lifecycle guards', () => {
+  it('releases failed-start claims so a legitimate retry can claim the same paths', () => {
+    const database = createDatabase()
+    const started = database.createStartingWorkerDispatch({
+      creator: { kind: 'system' },
+      maxDepth: 10,
+      taskRunId: 'run_legacy_local',
+      taskSpec: 'retry claims',
+      startOptions: {}
+    })
+    claimFiles(database, started.dispatch.id)
+    database.failWorkerStart(started.dispatch.id, 'agent_readiness', 'agent refused')
+
+    expect(database.listFileClaimsForDispatch(started.dispatch.id)).toEqual([])
+    const retry = database.createStartingWorkerDispatch({
+      creator: { kind: 'system' },
+      maxDepth: 10,
+      taskId: started.task.id,
+      retryOf: started.dispatch.id,
+      startOptions: {}
+    })
+    expect(claimFiles(database, retry.dispatch.id).refused).toEqual([])
+  })
+
+  it.each([
+    'stop',
+    'abandon',
+    'exit',
+    'complete',
+    'missing-terminal',
+    'report-success',
+    'report-failure'
+  ] as const)('releases only the ended dispatch claims after %s', (operation) => {
+    const database = createDatabase()
+    const task = database.createTask({ runId: 'run_legacy_local', spec: `${operation} claims` })
+    const worker = startWorker(database, task.id, operation)
+    claimFiles(database, worker.dispatchId)
+    const peerClaims = claimFiles(database, 'live_peer', ['src/peer.ts']).granted
+
+    if (operation === 'stop') {
+      database.beginWorkerStop(worker.dispatchId, 'runtime_test')
+      expect(database.listFileClaimsForDispatch(worker.dispatchId)).toHaveLength(1)
+      database.settleWorkerStop(worker.dispatchId)
+    } else if (operation === 'abandon') {
+      database.abandonWorkerDispatch(worker.dispatchId, 'runtime_test')
+    } else if (operation === 'exit') {
+      database.failDispatch(worker.dispatchId, 'exited', { workerProcessExited: true })
+    } else if (operation === 'missing-terminal') {
+      database.reconcileMissingWorkerTerminal(worker.dispatchId, 'terminal proven missing')
+    } else if (operation === 'report-success' || operation === 'report-failure') {
+      expect(
+        database.settleWorkerReport({
+          taskId: task.id,
+          dispatchId: worker.dispatchId,
+          outcome: operation === 'report-success' ? 'succeeded' : 'failed',
+          result: 'settled report'
+        }).action
+      ).toBe('settled')
+    } else {
+      database.completeDispatch(worker.dispatchId)
+    }
+
+    expect(database.listFileClaimsForDispatch(worker.dispatchId)).toEqual([])
+    expect(database.listFileClaimsForDispatch('live_peer')).toEqual(peerClaims)
+  })
+
+  it('preserves claims while start and stop outcomes remain unknown', () => {
+    const database = createDatabase()
+    const started = database.createStartingWorkerDispatch({
+      creator: { kind: 'system' },
+      maxDepth: 10,
+      taskRunId: 'run_legacy_local',
+      taskSpec: 'uncertain claims',
+      startOptions: {}
+    })
+    const claims = claimFiles(database, started.dispatch.id).granted
+    database.markWorkerStartUnknown(started.dispatch.id, 'prompt_delivery', 'response lost')
+    expect(database.listFileClaimsForDispatch(started.dispatch.id)).toEqual(claims)
+    database.beginWorkerStop(started.dispatch.id, 'runtime_test')
+    database.markWorkerStopUnknown(started.dispatch.id, 'response lost')
+    expect(database.listFileClaimsForDispatch(started.dispatch.id)).toEqual(claims)
+    expect(() => database.failDispatch(started.dispatch.id, 'unsafe retry')).toThrow()
+    expect(database.listFileClaimsForDispatch(started.dispatch.id)).toEqual(claims)
+  })
+
+  it('keeps a legacy unobserved prompt claim until its worker report settles', () => {
+    const database = createDatabase()
+    const started = database.createStartingWorkerDispatch({
+      creator: { kind: 'system' },
+      maxDepth: 10,
+      taskRunId: 'run_legacy_local',
+      taskSpec: 'legacy prompt claims',
+      startOptions: {}
+    })
+    const claims = claimFiles(database, started.dispatch.id).granted
+    database.failWorkerStart(started.dispatch.id, 'prompt_delivery', AGENT_PROMPT_STALLED_ERROR)
+    expect(database.listFileClaimsForDispatch(started.dispatch.id)).toEqual(claims)
+    expect(
+      database.settleWorkerReport({
+        taskId: started.task.id,
+        dispatchId: started.dispatch.id,
+        outcome: 'failed',
+        result: 'worker report proves settlement'
+      }).action
+    ).toBe('settled')
+    expect(database.listFileClaimsForDispatch(started.dispatch.id)).toEqual([])
+  })
+
+  it('releases assignment claims without changing user terminal takeover', () => {
+    const database = createDatabase()
+    const task = database.createTask({ runId: 'run_legacy_local', spec: 'user takeover claims' })
+    const worker = startWorker(database, task.id, 'takeover')
+    const claims = claimFiles(database, worker.dispatchId).granted
+    database.markWorkerTerminalUserOwned(worker.paneKey)
+    const terminal = database.getWorkerTerminalResourceByOwner(worker.dispatchId)
+    expect(terminal?.ownership_state).toBe('user_owned')
+    expect(database.listFileClaimsForDispatch(worker.dispatchId)).toEqual(claims)
+    database.abandonWorkerDispatch(worker.dispatchId, 'runtime_test')
+    expect(database.listFileClaimsForDispatch(worker.dispatchId)).toEqual([])
+    expect(database.getWorkerTerminalResourceByOwner(worker.dispatchId)).toEqual(terminal)
+  })
+
+  it('rolls back failed-start lifecycle changes if claim release fails', () => {
+    const database = createDatabase()
+    const started = database.createStartingWorkerDispatch({
+      creator: { kind: 'system' },
+      maxDepth: 10,
+      taskRunId: 'run_legacy_local',
+      taskSpec: 'atomic claim release',
+      startOptions: {}
+    })
+    const claims = claimFiles(database, started.dispatch.id).granted
+    sqliteFor(database).exec(
+      `CREATE TRIGGER reject_claim_release BEFORE DELETE ON worker_file_claims BEGIN SELECT RAISE(ABORT, 'forced claim release failure'); END;`
+    )
+
+    expect(() =>
+      database.failWorkerStart(started.dispatch.id, 'agent_readiness', 'refused')
+    ).toThrow('forced claim release failure')
+    expect(database.getWorkerDispatch(started.dispatch.id)?.state).toBe('starting')
+    expect(database.getDispatchContextById(started.dispatch.id)?.status).toBe('pending')
+    expect(database.getTask(started.task.id)?.status).toBe('dispatched')
+    expect(database.listFileClaimsForDispatch(started.dispatch.id)).toEqual(claims)
+  })
+
   it('rejects a worker report while another supervised Dispatch is active', () => {
     const database = createDatabase()
     const task = database.createTask({ runId: 'run_legacy_local', spec: 'legacy supervised split' })
@@ -680,6 +825,16 @@ function createDatabase(): OrchestrationDb {
   dir = mkdtempSync(join(tmpdir(), 'orca-task-dispatch-lifecycle-'))
   db = new OrchestrationDb(join(dir, 'orchestration.db'))
   return db
+}
+
+function claimFiles(database: OrchestrationDb, dispatchId: string, paths = ['src/owned.ts']) {
+  return database.claimWorkerFiles({
+    runId: 'run_legacy_local',
+    workspaceId: 'workspace_claims',
+    dispatchId,
+    paths,
+    flavor: 'case_sensitive'
+  })
 }
 
 function startWorker(database: OrchestrationDb, taskId: string, name: string): WorkerFixture {

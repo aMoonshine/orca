@@ -28,6 +28,7 @@
   install      Re-run the native-module build for Electron, then exit.
   native       Re-run the native-module build for the local Node, then exit.
   install-node Download the pinned portable Node into tools\runtime, then exit.
+  install-opencode Install the pinned OpenCode terminal CLI, then exit.
 
 .PARAMETER SkipWebBuild
   Skip the pairing web-client bundle build. The dev runner already skips it when the
@@ -69,6 +70,29 @@ function Write-Warn($message) {
 
 function Write-Fail($message) {
   Write-Host "[orca-dev] $message" -ForegroundColor Red
+}
+
+function Write-AgentCliResolution([string]$Name) {
+  $agent = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $agent) {
+    Write-Warn "$Name CLI: not found on PATH"
+    return
+  }
+  Write-Step "$Name CLI: $($agent.Source)"
+  if ($Name -eq 'opencode' -and $agent.Source -match '@opencode-aidesktop') {
+    Write-Warn 'OpenCode is the desktop app. Install the terminal CLI: tools\orca-dev.cmd install-opencode'
+    return
+  }
+  try {
+    $version = (& $agent.Source --version 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -eq 0 -and $version) {
+      Write-Step "$Name version: $version"
+    } else {
+      Write-Warn "$Name version: unavailable (exit $LASTEXITCODE)"
+    }
+  } catch {
+    Write-Warn "$Name version: unavailable"
+  }
 }
 
 function Get-LocalNode {
@@ -184,12 +208,10 @@ switch ($Action) {
       exit 1
     }
     Write-Step 'Native modules: OK'
-    $agent = Get-Command opencode -ErrorAction SilentlyContinue
-    if ($agent -and $agent.Source -match '@opencode-aidesktop') {
-      Write-Warn 'OpenCode is the desktop app. Install the terminal CLI: tools\orca-dev.cmd install-opencode'
-    } elseif ($agent) {
-      Write-Step "OpenCode CLI : $($agent.Source)"
-    }
+    Write-Step "OpenCode pin : $OpenCodeVersion (install-opencode target; not a latest-version check)"
+    Write-Step "OpenCode root: $OpenCodeRoot"
+    Write-AgentCliResolution 'opencode'
+    Write-AgentCliResolution 'codex'
     exit 0
   }
 
@@ -246,6 +268,9 @@ switch ($Action) {
     try {
       Write-Step 'Building the local Orca CLI'
       & $node (Join-Path $RepoRoot 'config\scripts\build-cli.mjs')
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      Write-Step 'Preparing the local Orca CLI output'
+      & $node (Join-Path $RepoRoot 'config\scripts\verify-cli-bin.mjs') '--fix-executable' '--fix-package-json'
       if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       & $node (Join-Path $RepoRoot 'config\scripts\run-electron-vite-dev.mjs') @args
       exit $LASTEXITCODE

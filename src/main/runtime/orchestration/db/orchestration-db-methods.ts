@@ -27,7 +27,6 @@ import type { LegacyQuestionLookupMethods } from './legacy/legacy-question-looku
 import type { LegacyRecoveryCohortMethods } from './legacy/legacy-recovery-cohort'
 import type { LegacyReplyOperationMethods } from './legacy/legacy-reply-operation'
 import type { FileClaimStoreMethods } from './file-claims/file-claim-store'
-import type { DecisionRegisterMethods } from './decisions/decision-register'
 import type { LegacyWorkerCompletionMethods } from './legacy/legacy-worker-completion'
 import type { DirectMailboxRoutingMethods } from './messages/direct-mailbox-routing'
 import type { ForeignDirectMailboxRoutingMethods } from './messages/foreign-direct-mailbox-routing'
@@ -137,5 +136,4 @@ export type OrchestrationDbMethods = AttemptObservationStoreMethods &
   DecisionGateStoreMethods &
   CoordinatorRunStoreMethods &
   OrchestrationResetMethods &
-  FileClaimStoreMethods &
-  DecisionRegisterMethods
+  FileClaimStoreMethods

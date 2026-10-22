@@ -4,6 +4,7 @@ import type { OrchestrationDb } from '../orchestration-db'
 import { transitionLifecycleWithDb } from '../lifecycle-transition'
 import { recordFailedStartDispatchIdentity } from '../worker-terminal/failed-start-dispatch-identity'
 import { DISPATCH_CIRCUIT_BREAK_FAILURES } from '../dispatch-context/dispatch-circuit-breaker'
+import { AGENT_PROMPT_STALLED_ERROR } from '../../../agent-prompt-submission-verification'
 
 export function markWorkerDispatchReady(
   this: OrchestrationDb,
@@ -95,6 +96,10 @@ export function failWorkerStart(
       })
     }
     this.closeQuestionsForDispatch(dispatchId)
+    // Legacy unobserved prompts may already have a live writer.
+    if (reason !== AGENT_PROMPT_STALLED_ERROR) {
+      this.releaseFileClaimsForDispatch(dispatchId)
+    }
     recordFailedStartDispatchIdentity(this, this.getWorkerDispatch(dispatchId) as WorkerDispatchRow)
     this.db.exec('COMMIT')
     return this.getWorkerDispatch(dispatchId) as WorkerDispatchRow

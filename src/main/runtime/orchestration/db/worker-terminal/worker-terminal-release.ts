@@ -160,6 +160,9 @@ export function settleDeadWorkerTerminalRelease(
         params.processIncarnation
       )
     const released = this.getWorkerTerminalResource(params.resourceId) as WorkerTerminalResourceRow
+    if (released.release_state === 'released') {
+      this.releaseFileClaimsForDispatch(resource.owner_dispatch_id)
+    }
     this.db.exec('COMMIT')
     return released.release_state === 'released'
       ? { disposition: 'released', resource: released }

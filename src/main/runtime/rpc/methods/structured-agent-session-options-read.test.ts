@@ -1,8 +1,15 @@
 import '../unused-default-rpc-methods.test-fixture'
+import { existsSync } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 // The catalog read behind the picker: which directory a named worktree runs in on this host.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { setStructuredAgentSessionHost } from '../../../native-chat/agent-session-wire/structured-agent-session-registry'
+import {
+  getStructuredAgentSessionHost,
+  setStructuredAgentSessionHost
+} from '../../../native-chat/agent-session-wire/structured-agent-session-registry'
 import { DESKTOP_RENDERER_RUNTIME_CLIENT_CAPABILITIES } from '../../../ipc/desktop-renderer-runtime-capabilities'
 import { createAgentModelCatalogService } from '../../../native-chat/agent-model-catalog/agent-model-catalog-service'
 import { AgentModelCatalogStore } from '../../../native-chat/agent-model-catalog/agent-model-catalog-store'
@@ -12,6 +19,17 @@ import type { AgentSessionRecord } from '../../../../shared/agent-session-record
 import type { AgentSessionModelCatalogResult } from '../../../../shared/agent-session-wire'
 import { agentSessionRecordFixture } from '../../../../shared/agent-session-record.test-fixture'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
+import {
+  ensureStructuredAgentSessionHost,
+  stopStructuredAgentSessionRuntime,
+  type StructuredAgentSessionRuntimeDeps
+} from '../../structured-agent-session-runtime'
+import { ensureStructuredAgentModelCatalog } from '../../structured-agent-model-catalog-wiring'
+import { journalDatabasePath } from '../../../native-chat/agent-session-journal/journal-host-database'
+import { createStructuredAgentSessionLogger } from '../../../native-chat/agent-session-wire/structured-agent-session-logger'
+import { defineMethod } from '../core'
+import { parseRpcRequestParams } from '../dispatcher-request-parsing'
+import { ModelCatalogParams } from './structured-agent-session-schemas'
 import {
   call,
   clearStructuredHostStub,
@@ -30,6 +48,31 @@ afterEach(() => {
 })
 
 describe('agentSession.modelCatalog', () => {
+  it('reports the exact optional refresh rejection from an older host through RPC parsing', () => {
+    const oldMethod = defineMethod({
+      name: 'agentSession.modelCatalog',
+      permission: 'workspace',
+      params: ModelCatalogParams.omit({ forceRefresh: true }),
+      handler: async () => ({ origin: 'unknown' as const })
+    })
+    expect(
+      parseRpcRequestParams(
+        {
+          id: 'old-host',
+          authToken: 'test',
+          method: 'agentSession.modelCatalog',
+          params: { agent: 'codex', worktree: 'id:folder:plain', forceRefresh: true }
+        },
+        oldMethod,
+        { runtimeId: 'old-runtime' }
+      )
+    ).toMatchObject({
+      error: {
+        ok: false,
+        error: { code: 'invalid_argument', message: 'Unrecognized key: "forceRefresh"' }
+      }
+    })
+  })
   const read = vi.fn(async () => ({ origin: 'unknown' as const }))
   let record: AgentSessionRecord | null = null
 
@@ -145,7 +188,7 @@ describe('agentSession.modelCatalog', () => {
     })
   })
 
-  it('reads for an unplaced workspace when the worktree does not resolve', async () => {
+  it('does not read a native catalog when the named workspace does not resolve', async () => {
     await call(
       'agentSession.modelCatalog',
       { agent: 'codex', worktree: 'id:missing' },
@@ -156,7 +199,47 @@ describe('agentSession.modelCatalog', () => {
         })
       }
     )
-    expect(read).toHaveBeenCalledWith({ agent: 'codex', workspacePath: null })
+    expect(read).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['paired WSL', async () => null],
+    [
+      'HUB nested SSH',
+      async (): Promise<null> => {
+        throw new Error('host_not_served')
+      }
+    ]
+  ] as const)('does not probe the native catalog for %s', async (_name, resolveWorkspace) => {
+    const probe = vi.fn(async () => ({
+      origin: 'probe' as const,
+      complete: true,
+      models: [{ id: 'native-only', label: 'Native', isDefault: true, efforts: [] }]
+    }))
+    const catalog = createAgentModelCatalogService({
+      store: new AgentModelCatalogStore(),
+      getRecord: () => undefined,
+      drivesRecord: () => true,
+      resolveAccountHome: async () => ({ variable: 'CODEX_HOME', path: '/native-account' }),
+      probes: { codex: probe }
+    })
+    setStructuredAgentSessionHost(
+      Object.assign(hostStub(), {
+        deps: { modelCatalog: catalog, store: { getRecord: () => null }, adapter: {} }
+      })
+    )
+    try {
+      const reply = await call(
+        'agentSession.modelCatalog',
+        { agent: 'codex', worktree: 'id:non-native', forceRefresh: true },
+        STRUCTURED_CLIENT,
+        { resolveStructuredAgentSessionLocalWorkspacePath: resolveWorkspace }
+      )
+      expect(reply).toMatchObject({ ok: true, result: { origin: 'unknown' } })
+      expect(probe).not.toHaveBeenCalled()
+    } finally {
+      catalog.stop()
+    }
   })
 
   it('reads as before when no worktree is named', async () => {
@@ -176,6 +259,15 @@ describe('agentSession.modelCatalog', () => {
   it('passes a saved-only read through to the catalog', async () => {
     await call('agentSession.modelCatalog', { agent: 'grok', savedOnly: true }, STRUCTURED_CLIENT)
     expect(read).toHaveBeenCalledWith({ agent: 'grok', savedOnly: true })
+  })
+
+  it('passes an explicit scoped refresh through to the catalog', async () => {
+    await call(
+      'agentSession.modelCatalog',
+      { agent: 'codex', forceRefresh: true },
+      STRUCTURED_CLIENT
+    )
+    expect(read).toHaveBeenCalledWith({ agent: 'codex', forceRefresh: true })
   })
 })
 
@@ -213,15 +305,101 @@ describe('agentSession.modelCatalog before anything built the host', () => {
     expect(read).toHaveBeenCalledWith({ agent: 'codex', sessionId: SESSION })
   })
 
-  // Terminal-backed chat reads with no session: a host that runs no structured chat keeps its
-  // journal closed, and the read falls back to the CLI listing.
-  it('does not build the host for a read that names no session', async () => {
+  it('reads an independent catalog without building the chat host', async () => {
+    const getStructuredAgentModelCatalog = vi.fn(async () => ({
+      read,
+      peek: () => null,
+      retainedLiveModelIds: async () => [],
+      recordLiveListing: () => {},
+      prewarm: async () => {},
+      stop: () => {},
+      providerStarted: () => {}
+    }))
     const reply = await call('agentSession.modelCatalog', { agent: 'codex' }, STRUCTURED_CLIENT, {
-      ensureStructuredAgentSessionHost: installHost
+      ensureStructuredAgentSessionHost: installHost,
+      getStructuredAgentModelCatalog
     })
     expect(installHost).not.toHaveBeenCalled()
-    expect(reply).toMatchObject({ ok: false })
-    expect(read).not.toHaveBeenCalled()
+    expect(reply).toMatchObject({ ok: true, result: { origin: 'probe' } })
+    expect(read).toHaveBeenCalledWith({ agent: 'codex' })
+  })
+
+  it('lists dynamic cold-host models under the selected account without opening a journal, then reuses the service for chats', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orca-cold-model-catalog-'))
+    let account = join(root, 'account-one')
+    const runSession: typeof runCodexAppServerSession = vi.fn(async (invocation, body) => {
+      expect(invocation).toMatchObject({
+        command: '/installed/codex',
+        cwd: expect.any(String),
+        env: { CODEX_HOME: account }
+      })
+      expect(invocation.args).toEqual(expect.arrayContaining(['-c', 'model_provider="work"']))
+      return body({
+        notify: () => {},
+        request: async (method) =>
+          method === 'model/list'
+            ? {
+                data: [
+                  {
+                    model: account.endsWith('one') ? 'dynamic-one' : 'dynamic-two',
+                    isDefault: true,
+                    supportedReasoningEfforts: []
+                  }
+                ],
+                nextCursor: null
+              }
+            : { config: {} }
+      })
+    })
+    const deps: StructuredAgentSessionRuntimeDeps = {
+      stateDirectory: root,
+      hostId: 'local',
+      claimKeyId: 'cold-catalog-test',
+      logger: createStructuredAgentSessionLogger(),
+      resolveWorkspacePath: async () => root,
+      resolveEnvironment: async () => ({}),
+      resolveLaunchArgs: () => ['-c', 'model_provider="work"'],
+      resolveClaudeAuthPolicy: () => ({ account: 'managed' }),
+      resolveCodexCommand: () => '/installed/codex',
+      resolveAgentAccountHome: async () => ({ variable: 'CODEX_HOME', path: account }),
+      runCodexCatalogSession: runSession
+    }
+    const runtime = {
+      ensureStructuredAgentSessionHost: installHost,
+      getStructuredAgentModelCatalog: () => ensureStructuredAgentModelCatalog(deps),
+      resolveStructuredAgentSessionLocalWorkspacePath: async () => root
+    }
+    try {
+      const params = { agent: 'codex', worktree: 'id:folder:plain', waitForListing: true }
+      expect(
+        await call('agentSession.modelCatalog', params, STRUCTURED_CLIENT, runtime)
+      ).toMatchObject({
+        ok: true,
+        result: { origin: 'probe', models: [{ id: 'dynamic-one' }] }
+      })
+      expect(getStructuredAgentSessionHost()).toBeNull()
+      expect(existsSync(journalDatabasePath(root))).toBe(false)
+      expect(installHost).not.toHaveBeenCalled()
+      const cold = await runtime.getStructuredAgentModelCatalog()
+      const host = await ensureStructuredAgentSessionHost(deps)
+      expect(host.deps.modelCatalog).toBe(cold)
+      expect(
+        await call('agentSession.modelCatalog', params, STRUCTURED_CLIENT, runtime)
+      ).toMatchObject({ ok: true, result: { models: [{ id: 'dynamic-one' }] } })
+      expect(
+        vi.mocked(runSession).mock.calls.filter(([invocation]) => invocation.cwd === root)
+      ).toHaveLength(1)
+      account = join(root, 'account-two')
+      expect(
+        await call('agentSession.modelCatalog', params, STRUCTURED_CLIENT, runtime)
+      ).toMatchObject({ ok: true, result: { models: [{ id: 'dynamic-two' }] } })
+      expect(
+        vi.mocked(runSession).mock.calls.filter(([invocation]) => invocation.cwd === root)
+      ).toHaveLength(2)
+    } finally {
+      await stopStructuredAgentSessionRuntime()
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it('does not build the host for a client that cannot read structured sessions', async () => {
@@ -233,6 +411,63 @@ describe('agentSession.modelCatalog before anything built the host', () => {
     )
     expect(installHost).not.toHaveBeenCalled()
     expect(reply).toMatchObject({ ok: false })
+  })
+
+  it('stops a cold catalog probe at runtime shutdown without creating a chat journal', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orca-cold-catalog-stop-'))
+    let started: (() => void) | undefined
+    const listing = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    let aborted = false
+    const deps: StructuredAgentSessionRuntimeDeps = {
+      stateDirectory: root,
+      hostId: 'local',
+      claimKeyId: 'cold-stop-test',
+      logger: createStructuredAgentSessionLogger(),
+      resolveWorkspacePath: async () => root,
+      resolveEnvironment: async () => ({}),
+      resolveLaunchArgs: () => [],
+      resolveClaudeAuthPolicy: () => ({ account: 'managed' }),
+      resolveCodexCommand: () => '/installed/codex',
+      resolveAgentAccountHome: async () => ({
+        variable: 'CODEX_HOME',
+        path: join(root, 'account')
+      }),
+      runCodexCatalogSession: async ({ signal }) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener(
+            'abort',
+            () => {
+              aborted = true
+              reject(new Error('probe stopped'))
+            },
+            { once: true }
+          )
+          started?.()
+        })
+    }
+    try {
+      expect(
+        await ensureStructuredAgentModelCatalog({ ...deps, resolveAgentAccountHome: undefined })
+      ).toBeUndefined()
+      const [first, second] = await Promise.all([
+        ensureStructuredAgentModelCatalog(deps),
+        ensureStructuredAgentModelCatalog(deps)
+      ])
+      expect(first).toBe(second)
+      const pending = first?.read({ agent: 'codex', workspacePath: root, waitForListing: true })
+      await listing
+      await stopStructuredAgentSessionRuntime()
+      await pending
+      expect(aborted).toBe(true)
+      expect(existsSync(journalDatabasePath(root))).toBe(false)
+      expect(getStructuredAgentSessionHost()).toBeNull()
+      expect(await ensureStructuredAgentModelCatalog(deps)).not.toBe(first)
+    } finally {
+      await stopStructuredAgentSessionRuntime()
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })
 

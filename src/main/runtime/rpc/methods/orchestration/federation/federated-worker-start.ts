@@ -34,6 +34,7 @@ import {
 } from './federated-worker-start-receipts'
 import { parseTaskDeps } from '../worker/task-deps-argument'
 import { releaseRetriedWorkerTerminal } from '../worker/retried-worker-terminal-release'
+import { parseClaimPaths } from '../worker/worker-start-file-claims'
 
 export async function startFederatedWorker(args: {
   params: WorkerStartInput
@@ -51,6 +52,13 @@ export async function startFederatedWorker(args: {
   callerSession?: OrchestrationSessionCaller
 }): Promise<unknown> {
   const { params, runtime, db, task, runId, orchestrationMutation } = args
+  if (parseClaimPaths(params.claims).length > 0 || db.getRunWorkMode(runId).mode !== 'solo') {
+    throw new OrchestrationError(
+      'capability_unsupported',
+      'Remote worker-start does not support file claims and non-solo work modes; the federation transport cannot preserve their guarantees.',
+      { effectsApplied: false, runId }
+    )
+  }
   if (!isWorkerStartTimeoutWithinTimerLimit(params.timeoutMs)) {
     throw new OrchestrationError(
       'invalid_argument',

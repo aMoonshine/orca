@@ -64,7 +64,12 @@ describe('a linked server another desktop stopped (P1-D)', () => {
       }))
     })
     await expect(resolveHostServerOnConnect(target, d)).resolves.toMatchObject({
-      fenceHeld: true
+      fenceHeld: true,
+      serving: {
+        state: 'unverifiable',
+        detail: MANAGED_ORCAD_FENCED_DETAIL,
+        reason: 'fenced'
+      }
     })
     expect(d.autoUpdate).not.toHaveBeenCalled()
   })

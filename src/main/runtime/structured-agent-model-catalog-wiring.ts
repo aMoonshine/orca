@@ -18,10 +18,16 @@ import type {
 } from './structured-agent-runtime-registrations'
 import type { StructuredAgentRegistry } from '../native-chat/agent-session-wire/structured-agent-registry'
 import { agentDrivesSession } from '../native-chat/agent-session-wire/structured-agent-session-provider-support'
-import { getStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
+import { STRUCTURED_AGENT_RUNTIME_CATALOG } from './structured-agent-runtime-metadata'
+import { createStructuredAgentEnvironmentResolvers } from './structured-agent-shell-environment'
 
 // The store is process-global; hydrate it from disk at most once per process.
 let persistenceAttached: Promise<void> | null = null
+let catalogService: Promise<{ modelCatalog?: AgentModelCatalogService }> | null = null
+let sessionContext: {
+  store: Pick<AgentSessionRecordStore, 'getRecord' | 'listRecords'>
+  agents: Pick<StructuredAgentRegistry, 'definition'>
+} | null = null
 
 export async function attachAgentModelCatalogPersistenceOnce(
   stateDirectory: string
@@ -33,6 +39,19 @@ export async function attachAgentModelCatalogPersistenceOnce(
 }
 
 type CatalogRegistration = Pick<StructuredAgentRuntimeRegistration, 'definition' | 'modelCatalog'>
+
+/** Catalog reads use chat launch resolvers without opening the record store or journal. */
+export async function ensureStructuredAgentModelCatalog(
+  deps: StructuredAgentModelCatalogContext['deps']
+): Promise<AgentModelCatalogService | undefined> {
+  return (
+    await modelCatalogHostDeps({
+      deps,
+      environment: createStructuredAgentEnvironmentResolvers(deps),
+      registrations: STRUCTURED_AGENT_RUNTIME_CATALOG.map(({ metadata }) => metadata)
+    })
+  ).modelCatalog
+}
 
 /** What the catalog service learns from the registration list, the only agent roster. */
 export function registeredModelCatalogDiscovery(
@@ -69,12 +88,28 @@ export function registeredModelCatalogDiscovery(
  * `unknown` rather than guessing a key.
  */
 export async function modelCatalogHostDeps(input: {
-  store: Pick<AgentSessionRecordStore, 'getRecord' | 'listRecords'>
-  agents: Pick<StructuredAgentRegistry, 'definition'>
+  store?: Pick<AgentSessionRecordStore, 'getRecord' | 'listRecords'>
+  agents?: Pick<StructuredAgentRegistry, 'definition'>
   registrations: readonly CatalogRegistration[]
   deps: StructuredAgentModelCatalogContext['deps']
   environment: StructuredAgentModelCatalogContext['environment']
 }): Promise<{ modelCatalog?: AgentModelCatalogService }> {
+  if (input.store && input.agents) {
+    sessionContext = { store: input.store, agents: input.agents }
+  }
+  if (!catalogService && !input.deps.resolveAgentAccountHome) {
+    return {}
+  }
+  catalogService ??= createHostCatalog(input).catch((error) => {
+    catalogService = null
+    throw error
+  })
+  return catalogService
+}
+
+async function createHostCatalog(
+  input: Parameters<typeof modelCatalogHostDeps>[0]
+): Promise<{ modelCatalog?: AgentModelCatalogService }> {
   await attachAgentModelCatalogPersistenceOnce(input.deps.stateDirectory)
   const { deps } = input
   if (!deps.resolveAgentAccountHome) {
@@ -82,8 +117,9 @@ export async function modelCatalogHostDeps(input: {
   }
   const modelCatalog = createAgentModelCatalogService({
     store: agentModelCatalogStore,
-    getRecord: (sessionId) => input.store.getRecord(sessionId) ?? undefined,
-    drivesRecord: (record) => agentDrivesSession(input.agents, record),
+    getRecord: (sessionId) => sessionContext?.store.getRecord(sessionId) ?? undefined,
+    drivesRecord: (record) =>
+      sessionContext !== null && agentDrivesSession(sessionContext.agents, record),
     resolveAccountHome: deps.resolveAgentAccountHome,
     recordWorkspacePath: async (record) =>
       agentSessionPinnedLaunchDirectory(record) ??
@@ -91,7 +127,7 @@ export async function modelCatalogHostDeps(input: {
     agentReadsProjectModelConfig,
     workspaceMayOverrideDefaultModel,
     hasChatRecords: (agent) =>
-      input.store.listRecords().some((record) => record.provider === agent),
+      sessionContext?.store.listRecords().some((record) => record.provider === agent) ?? false,
     ...registeredModelCatalogDiscovery(input.registrations, {
       deps,
       environment: input.environment
@@ -100,10 +136,18 @@ export async function modelCatalogHostDeps(input: {
   return { modelCatalog }
 }
 
-/** The installed host lists what a changed account or agent setting made cold; with no host yet,
- *  its install lists everything anyway. */
+/** A catalog created by a picker or chat rechecks what the changed host settings made cold. */
 export function prewarmStructuredAgentModelCatalogs(): void {
-  void getStructuredAgentSessionHost()?.deps.modelCatalog?.prewarm()
+  void catalogService?.then(({ modelCatalog }) => modelCatalog?.prewarm()).catch(() => {})
+}
+
+export async function stopStructuredAgentModelCatalog(): Promise<void> {
+  const pending = catalogService
+  catalogService = null
+  sessionContext = null
+  const catalog = await pending?.catch(() => null)
+  catalog?.modelCatalog?.stop()
+  await agentModelCatalogStore.flushPersistence()
 }
 
 // Re-exported so the runtime deps type can reference the resolver shape without

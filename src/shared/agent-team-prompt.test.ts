@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildAgentTeamPrompt } from './agent-team-prompt'
 
 describe('team manager bootstrap', () => {
-  it('carries the exact worker model, goal, scope and retained-session policy', () => {
+  it('carries the exact worker model, goal, scope and verified-worker cleanup policy', () => {
     const prompt = buildAgentTeamPrompt({
       objective: 'Find parser bugs without editing',
       agent: 'opencode',
@@ -12,6 +12,8 @@ describe('team manager bootstrap', () => {
     expect(prompt).toContain('provider/exact-model')
     expect(prompt).toContain('Find parser bugs without editing')
     expect(prompt).toContain('worker-retain')
+    expect(prompt).toContain('then close completed worker panels with worker-release')
+    expect(prompt).toContain('Preserve the master chat and user-taken-over sessions')
     expect(prompt).toContain('do not explore or edit sibling repositories')
     expect(prompt).toContain('check --wait')
     expect(prompt).toContain('Create Task rows before dispatch')
@@ -20,5 +22,26 @@ describe('team manager bootstrap', () => {
     expect(() =>
       buildAgentTeamPrompt({ objective: 'Review', agent: 'opencode', model: 'p/m', count })
     ).toThrow()
+  })
+  it('uses the CLI default only when worker model overrides are unsupported', () => {
+    const prompt = buildAgentTeamPrompt({
+      objective: 'Review',
+      agent: 'gemini',
+      model: '',
+      count: 2
+    })
+    expect(prompt).toContain('Omit --model')
+    expect(prompt).not.toContain('passing --agent and --model')
+    expect(() =>
+      buildAgentTeamPrompt({ objective: 'Review', agent: 'opencode', model: '', count: 2 })
+    ).toThrow()
+    expect(() =>
+      buildAgentTeamPrompt({
+        objective: 'Review',
+        agent: 'gemini',
+        model: 'explicit/model',
+        count: 2
+      })
+    ).toThrow('explicit model override')
   })
 })

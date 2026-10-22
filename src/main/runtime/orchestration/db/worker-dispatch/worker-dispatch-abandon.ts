@@ -34,6 +34,7 @@ export function abandonWorkerDispatch(
       const released = releaseContextOnlyDispatch(this.db, dispatch, 'abandoned')
       if (!released.alreadySettled) {
         this.closeQuestionsForDispatch(dispatchId)
+        this.releaseFileClaimsForDispatch(dispatchId)
       }
       this.db.exec('COMMIT')
       return { disposition: 'context_only', ...released }
@@ -81,6 +82,7 @@ export function abandonWorkerDispatch(
       }
       reconcileTaskAfterDispatchInterruption(this, dispatch.task_id, dispatchId)
       this.closeQuestionsForDispatch(dispatchId)
+      this.releaseFileClaimsForDispatch(dispatchId)
       const terminal = this.getWorkerTerminalResourceByOwner(dispatchId)
       // Abandon hands an owned terminal back instead of closing it, by the same rule as worker-retain.
       if (terminal?.ownership_state === 'owned') {

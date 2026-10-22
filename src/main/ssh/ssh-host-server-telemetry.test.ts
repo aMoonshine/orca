@@ -104,7 +104,9 @@ describe('ssh host server telemetry', () => {
       'update_failed',
       'update_host_newer',
       'update_rolled_back',
-      'update_check_failed'
+      'update_check_failed',
+      'update_no_template',
+      'update_migrating'
     ] as const) {
       trackSshHostServerEvent(
         {

@@ -46,6 +46,12 @@ function foldSegment(segment: string, flavor: ClaimPathFlavor): string {
  * tree.
  */
 export function toClaimPathKey(path: string, flavor: ClaimPathFlavor): string {
+  if (/^[\\/]|^[A-Za-z]:/.test(path)) {
+    throw new ClaimPathError(
+      'claim_path_escapes_workspace',
+      `Claim path ${path} must be relative to the workspace root.`
+    )
+  }
   // Why a backslash is a separator here: on Windows it is, and on POSIX a backslash
   // is a legal filename character - but a claim key that treated them differently
   // would let the same claim register twice on the one host that allows it.

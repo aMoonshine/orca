@@ -13,6 +13,7 @@ import {
 } from './filesystem-source-control-ai-targets'
 import { getLocalGitOptionsForRegisteredWorktree } from '../local-worktree-runtime-options'
 import type { FilesystemHandlerContext } from './filesystem-handler-context'
+import { resolveTuiAgentLaunchEnv } from '../../../shared/tui-agent-launch-defaults'
 
 export function registerFilesystemGitModelDiscoveryHandlers(
   context: FilesystemHandlerContext
@@ -57,6 +58,12 @@ export function registerFilesystemGitModelDiscoveryHandlers(
       )
       if (!localEnv.ok) {
         return { success: false, error: localEnv.error }
+      }
+      if (agentId === 'opencode' || agentId === 'opencode2') {
+        localDiscoveryOptions = {
+          ...localDiscoveryOptions,
+          launchEnv: resolveTuiAgentLaunchEnv(agentId, store.getSettings().agentDefaultEnv)
+        }
       }
       return localDiscoveryOptions
         ? discoverCommitMessageModelsLocal(

@@ -70,4 +70,19 @@ describe('master session lifecycle', () => {
       tabId: 'master-tab'
     })
   })
+  it('launches unsupported providers with CLI defaults and bootstraps workers without model overrides', async () => {
+    await startAgentTeam({ ...args, leader: 'gemini', leaderModel: '', agent: 'gemini', model: '' })
+    expect(mocks.launch).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: 'gemini', sessionOptions: undefined })
+    )
+    expect(mocks.rpc.mock.calls[2][2].text).toContain('Omit --model')
+    expect(mocks.rpc.mock.calls[2][2].text).toContain('"agent":"gemini"')
+  })
+  it.each([
+    { leader: 'gemini' as const, leaderModel: 'explicit/model' },
+    { leader: 'opencode' as const, leaderModel: '' }
+  ])('rejects an invalid master override before opening a surface: %s', async (leader) => {
+    await expect(startAgentTeam({ ...args, ...leader })).rejects.toThrow()
+    expect(mocks.launch).not.toHaveBeenCalled()
+  })
 })

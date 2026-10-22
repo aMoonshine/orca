@@ -62,6 +62,15 @@ describe('checkManagedServerUpdate notes a server that may be behind this app', 
     expect((await check(deps({ outcome: 'skipped', reason: 'current' }))).note).toBeUndefined()
     expect((await check(deps({ outcome: 'updated', activeVersion: '1' }))).note).toBeUndefined()
   })
+
+  it('names version skew instead of a plain connected update', async () => {
+    expect((await check(deps({ outcome: 'skipped', reason: 'no-template' }))).reason).toBe(
+      'update_no_template'
+    )
+    expect((await check(deps({ outcome: 'skipped', reason: 'migrating' }))).reason).toBe(
+      'update_migrating'
+    )
+  })
 })
 
 describe('a recorded update failure', () => {

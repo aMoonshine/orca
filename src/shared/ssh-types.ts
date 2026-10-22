@@ -309,7 +309,12 @@ export type SshManagedServerLinkedProject = {
 }
 
 /** A managed server that did not answer and was not proven serving, with why (and orcad.log's tail). */
-export type SshManagedServerServingNote = { state: 'unverifiable'; detail: string }
+export type SshManagedServerServingNote = {
+  state: 'unverifiable'
+  detail: string
+  /** Set when another desktop's update, rollback or recovery held the host, so it clears itself. */
+  reason?: 'fenced'
+}
 
 export const SSH_MANAGED_SERVER_RELAY_REASONS = [
   'orcad_unavailable',

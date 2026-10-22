@@ -8,7 +8,10 @@ import {
   hasCachedWindowsTerminalCapabilities
 } from '@/lib/windows-terminal-capabilities'
 import { requestTerminalWritePipelineProbe } from '@/lib/pane-manager/terminal-write-pipeline-health'
-import { subscribeToTerminalUserInput } from '../terminal-user-input-signal'
+import {
+  subscribeToTerminalConversationInput,
+  subscribeToTerminalUserInput
+} from '../terminal-user-input-signal'
 import {
   isLocalNativeWindowsConpty,
   resolveWindowsShellOverride
@@ -250,18 +253,27 @@ export function installPaneHostCapabilityFlags(session: ConnectPanePtySession): 
   // Why: onData mixes real user input with xterm's parser auto-replies (focus
   // reports, DA/DSR/CPR responses). Recording those replies as activity makes
   // the hibernation planner treat a pane hidden after its agent finished as
-  // "input after done" forever. The core user-input signal fires only for real
-  // input, so hibernation activity records from it; onData recording remains
-  // solely as the fallback when the internal API is unavailable.
+  // "input after done" forever. Hibernation keeps xterm's broad input signal;
+  // ownership separately excludes programmatic paste and pointer reports.
+  // onData recording remains the fallback when the internal API is unavailable.
   session.recordRealUserTerminalInput = (): void => {
     session.recordTerminalInputForHibernation()
-    // Takeover must never fire from the onData fallback below: it mixes in auto-replies.
-    reportWorkerTerminalUserInput(session.cacheKey, session.runtimeEnvironmentId)
   }
-  session.userInputActivityDisposable = subscribeToTerminalUserInput(
+  const activity = subscribeToTerminalUserInput(
     session.pane.terminal,
     session.recordRealUserTerminalInput
   )
+  const takeover = subscribeToTerminalConversationInput(session.pane.terminal, () => {
+    reportWorkerTerminalUserInput(session.cacheKey, session.runtimeEnvironmentId)
+  })
+  session.userInputActivityDisposable = activity
+    ? {
+        dispose: () => {
+          activity.dispose()
+          takeover?.dispose()
+        }
+      }
+    : null
   session.recordTerminalInputForHibernationFallback = (): void => {
     if (session.userInputActivityDisposable === null) {
       session.recordTerminalInputForHibernation()

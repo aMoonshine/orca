@@ -32,6 +32,7 @@ describe('orchestration worker-start CLI contract', () => {
   })
 
   afterEach(() => {
+    vi.unstubAllEnvs()
     process.exitCode = originalExitCode
     if (originalCliCommand === undefined) {
       delete process.env.ORCA_CLI_COMMAND
@@ -72,6 +73,7 @@ describe('orchestration worker-start CLI contract', () => {
         ['comment', 'Supervised from the Mac Run home'],
         ['setup', 'run'],
         ['agent', 'codex'],
+        ['claims', 'src/parser,src/parser.test.ts'],
         ['timeout-ms', '90000'],
         ['run', 'run_1'],
         ['from', 'term_coord'],
@@ -92,6 +94,7 @@ describe('orchestration worker-start CLI contract', () => {
         comment: 'Supervised from the Mac Run home',
         setup: 'run',
         agent: 'codex',
+        claims: 'src/parser,src/parser.test.ts',
         terminal: undefined,
         retryOf: undefined,
         timeoutMs: 90_000,
@@ -206,6 +209,7 @@ describe('orchestration worker-start CLI contract', () => {
   ] as const)(
     'renders %s recovery commands through the resolved %s executable',
     async (_format, executable, json) => {
+      vi.stubEnv('ORCA_TERMINAL_WINDOWS_SHELL', 'cmd.exe')
       process.env.ORCA_CLI_COMMAND = executable
       callMock.mockResolvedValue({
         result: {
@@ -235,14 +239,19 @@ describe('orchestration worker-start CLI contract', () => {
         boolean,
         (result: RecoveryWorkerStartResult) => string
       ]
-      expect(response.result.nextCommands).toEqual([
-        `${executable} orchestration worker-show --dispatch ctx_unknown --json`,
-        `${executable} orchestration worker-abandon --dispatch ctx_unknown --json`
-      ])
+      const expectedCommands =
+        process.platform === 'win32'
+          ? [
+              `"${executable}" "orchestration" "worker-show" "--dispatch" "ctx_unknown" "--json"`,
+              `"${executable}" "orchestration" "worker-abandon" "--dispatch" "ctx_unknown" "--json"`
+            ]
+          : [
+              `${executable} orchestration worker-show --dispatch ctx_unknown --json`,
+              `${executable} orchestration worker-abandon --dispatch ctx_unknown --json`
+            ]
+      expect(response.result.nextCommands).toEqual(expectedCommands)
       if (!json) {
-        expect(formatter(response.result)).toContain(
-          `Next command: ${executable} orchestration worker-show --dispatch ctx_unknown --json`
-        )
+        expect(formatter(response.result)).toContain(`Next command: ${expectedCommands[0]}`)
       }
     }
   )

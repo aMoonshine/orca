@@ -12,6 +12,8 @@ import { AcpScriptedAgent } from './acp-scripted-agent.test-support'
 import { AgentModelCatalogListingStoppedError } from '../native-chat/agent-model-catalog/agent-model-catalog-failures'
 import type { ProviderProcessLaunch } from '../provider-process/provider-process-launch'
 import { openCodeAcpAccountBinding } from '../opencode/opencode-structured-account-home'
+import { createAgentModelCatalogService } from '../native-chat/agent-model-catalog/agent-model-catalog-service'
+import { AgentModelCatalogStore } from '../native-chat/agent-model-catalog/agent-model-catalog-store'
 
 const GROK = acpLaunchSpecFor('grok')!
 // The user's own OpenCode environment, read without the app's managed-account service.
@@ -162,6 +164,62 @@ function scriptedOpenCode2(canDelete: boolean): {
 }
 
 describe('ACP model catalog probes', () => {
+  it('serves OpenCode models for plain folders using the configured command and launch environment', async () => {
+    const runListing: NonNullable<AcpModelCatalogProbeDeps['runListing']> = vi.fn(
+      async (launch) =>
+        `project/${launch.cwd?.endsWith('plain-folder') ? 'folder' : 'worktree'}\n{ "name": "${launch.env?.PROJECT_MODEL}" }\n`
+    )
+    const probe = createAcpModelCatalogProbe(OPENCODE, {
+      dataDirectory: '/orca-data',
+      resolveEnvironment: async () => ({ PATH: '/usr/bin', HOME: '/home/user' }),
+      resolveLaunchEnv: () => ({
+        PROJECT_MODEL: 'Configured project model',
+        OPENCODE_CONFIG_CONTENT: '{"provider":{}}'
+      }),
+      resolveCommandSettings: () => ({ agentCmdOverrides: { opencode: process.execPath } }),
+      probeVersion: async () => ({ version: '1.18.35' }),
+      runListing
+    })
+    const service = createAgentModelCatalogService({
+      store: new AgentModelCatalogStore(),
+      getRecord: () => undefined,
+      drivesRecord: () => false,
+      resolveAccountHome: async () => ({ kind: 'opencode', locator: { kind: 'unmanaged' } }),
+      probes: { opencode: probe },
+      listsInChatFolder: new Set(['opencode'])
+    })
+    try {
+      const folder = await service.read({
+        agent: 'opencode',
+        workspacePath: '/work/plain-folder',
+        waitForListing: true
+      })
+      const worktree = await service.read({
+        agent: 'opencode',
+        workspacePath: '/work/git-worktree',
+        waitForListing: true
+      })
+      expect(folder).toMatchObject({
+        models: [{ id: 'project/folder', label: 'project/Configured project model' }]
+      })
+      expect(worktree).toMatchObject({ models: [{ id: 'project/worktree' }] })
+      expect(runListing).toHaveBeenCalledTimes(2)
+      expect(runListing).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          command: process.execPath,
+          cwd: '/work/plain-folder',
+          env: expect.objectContaining({
+            PROJECT_MODEL: 'Configured project model',
+            OPENCODE_CONFIG_CONTENT: '{"provider":{}}'
+          })
+        }),
+        expect.anything()
+      )
+    } finally {
+      service.stop()
+    }
+  })
   it('lists Grok from initialize alone, under its pinned account, and closes the child', async () => {
     const { agent, deps, launches, closed } = scriptedGrok({ modelState: MODEL_STATE })
     const success = await createAcpModelCatalogProbe(GROK, deps)(GROK_HOME)
@@ -269,7 +327,7 @@ describe('ACP model catalog probes', () => {
     // In the asking chat's folder, so OpenCode records no project the person never opened.
     expect(agent.frames[1]!.params).toMatchObject({ cwd: '/work/project' })
     expect(agent.frames[2]!.params).toEqual({ sessionId: 'probe-session' })
-    expect(launches).toEqual([expect.objectContaining({ args: ['acp'] })])
+    expect(launches).toEqual([expect.objectContaining({ args: ['acp'], cwd: '/work/project' })])
     expect(deps.runListing).not.toHaveBeenCalled()
     expect(success.models.map((model) => [model.id, model.label])).toEqual([
       ['opencode/big-pickle', 'Big Pickle'],

@@ -103,8 +103,9 @@ function skipped(
         recorded: true
       }
     case 'no-template':
+      return { note: { state: reason }, reason: 'update_no_template', recorded: false }
     case 'migrating':
-      return { note: { state: reason }, reason: 'connected', recorded: false }
+      return { note: { state: reason }, reason: 'update_migrating', recorded: false }
     case 'current':
       return { note: undefined, reason: 'connected', recorded: false }
   }

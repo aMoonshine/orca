@@ -300,6 +300,7 @@ export const ModelCatalogParams = z.strictObject({
   sessionId: SessionId.optional(),
   worktree: Identifier('Invalid worktree selector').optional(),
   waitForListing: z.boolean().optional(),
+  forceRefresh: z.boolean().optional(),
   // Answer only from what the host has saved; never start a listing. Sent only to a host advertising
   // the saved-only capability: an older one refuses the unknown key.
   savedOnly: z.boolean().optional()

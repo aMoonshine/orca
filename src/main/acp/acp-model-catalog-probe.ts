@@ -73,8 +73,7 @@ export function createAcpModelCatalogProbe(
     if (!workspace && acpListingNeedsChatFolder(discovery)) {
       throw folderlessListing(spec)
     }
-    // Spawned from home; a listing reads a project's config only in the chat folder it is asked for.
-    const cwd = deps.homePath ?? homedir()
+    const cwd = workspace ?? deps.homePath ?? homedir()
     const { command, env, envToDelete } = await resolveAcpLaunchInvocation(spec, accountHome, {
       ...deps,
       resolveWorkingDirectory: () => cwd

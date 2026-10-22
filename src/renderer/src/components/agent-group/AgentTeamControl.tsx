@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,6 +11,7 @@ import type { GroupWorker } from '@/lib/agent-group-launch'
 import type { TabAgentLaunchOption } from '../tab-bar/tab-agent-launch-options'
 import { AgentGroupWorkers } from './AgentGroupWorkers'
 import { AgentTeamBoard } from './AgentTeamBoard'
+import { groupProviderOptions, groupWorkerCanLaunch } from '@/lib/agent-group-provider-options'
 
 export function AgentTeamControl({
   target,
@@ -23,13 +24,14 @@ export function AgentTeamControl({
   options: TabAgentLaunchOption[]
   onClose: () => void
 }) {
-  const initial = options[0]?.agent ?? 'opencode'
-  const [leader, setLeader] = useState<GroupWorker[]>([
-    { id: 'team-master', agent: initial, spec: '', claims: '' }
-  ])
-  const [worker, setWorker] = useState<GroupWorker[]>([
-    { id: 'team-worker', agent: initial, spec: '', claims: '' }
-  ])
+  const providers = useMemo(() => groupProviderOptions(options), [options])
+  const initial = providers.find((option) => !option.disabled)?.agent
+  const [leaderDraft, setLeader] = useState<GroupWorker[] | null>(null)
+  const [workerDraft, setWorker] = useState<GroupWorker[] | null>(null)
+  const leader =
+    leaderDraft ?? (initial ? [{ id: 'team-master', agent: initial, spec: '', claims: '' }] : [])
+  const worker =
+    workerDraft ?? (initial ? [{ id: 'team-worker', agent: initial, spec: '', claims: '' }] : [])
   const [objective, setObjective] = useState('')
   const [count, setCount] = useState(6)
   const [busy, setBusy] = useState(false)
@@ -37,6 +39,12 @@ export function AgentTeamControl({
   const key = teamSessionKey(target, worktreeId)
   const [session, setSession] = useState(() => readTeamSession(key))
   async function start() {
+    if (
+      !groupWorkerCanLaunch(leader[0], providers) ||
+      !groupWorkerCanLaunch(worker[0], providers)
+    ) {
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -124,7 +132,7 @@ export function AgentTeamControl({
             target={target}
             worktreeId={worktreeId}
             workers={leader}
-            options={options}
+            options={providers}
             writable={false}
             disabled={busy}
             showTasks={false}
@@ -135,7 +143,7 @@ export function AgentTeamControl({
             target={target}
             worktreeId={worktreeId}
             workers={worker}
-            options={options}
+            options={providers}
             writable={false}
             disabled={busy}
             showTasks={false}
@@ -155,12 +163,11 @@ export function AgentTeamControl({
             disabled={
               busy ||
               !objective.trim() ||
-              !leader[0].model ||
-              !worker[0].model ||
+              !groupWorkerCanLaunch(leader[0], providers) ||
+              !groupWorkerCanLaunch(worker[0], providers) ||
               !Number.isInteger(count) ||
               count < 1 ||
-              count > 20 ||
-              !options.length
+              count > 20
             }
             onClick={() => void start()}
           >

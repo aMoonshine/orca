@@ -6,7 +6,13 @@ import type {
   WorkerTerminalRetainedReason
 } from '../../worker-terminal-ownership'
 import { OrchestrationError } from '../../orchestration-error'
+import { WORKER_TERMINAL_RELEASABLE_ROW_SQL } from '../../worker-terminal-ownership'
 import type { OrchestrationDb } from '../orchestration-db'
+import {
+  beginLifecycleWriteTransaction,
+  commitLifecycleWriteTransaction,
+  rollbackLifecycleWriteTransaction
+} from '../lifecycle-transition'
 
 export function storeWorkerTerminalArchive(
   this: OrchestrationDb,
@@ -99,16 +105,34 @@ export function settleWorkerTerminalRelease(
   this: OrchestrationDb,
   resourceId: string
 ): WorkerTerminalResourceRow {
-  this.db
-    .prepare(
-      `UPDATE worker_terminal_resources
+  const transaction = beginLifecycleWriteTransaction(this.db, 'settle_worker_terminal_release')
+  try {
+    this.db
+      .prepare(
+        `UPDATE worker_terminal_resources
        SET release_state = 'released', ownership_state = 'released',
            release_completed_at = datetime('now'), release_error = NULL,
            updated_at = datetime('now')
-       WHERE id = ? AND release_state IN ('requested', 'releasing', 'unknown')`
-    )
-    .run(resourceId)
-  return this.getWorkerTerminalResource(resourceId) as WorkerTerminalResourceRow
+       WHERE id = ? AND release_state IN ('requested', 'releasing', 'unknown')
+         AND ${WORKER_TERMINAL_RELEASABLE_ROW_SQL}`
+      )
+      .run(resourceId)
+    const resource = this.getWorkerTerminalResource(resourceId)
+    if (!resource) {
+      throw new OrchestrationError(
+        'dispatch_not_found',
+        `Worker terminal resource ${resourceId} was not found.`
+      )
+    }
+    if (resource.release_state === 'released') {
+      this.releaseFileClaimsForDispatch(resource.owner_dispatch_id)
+    }
+    commitLifecycleWriteTransaction(this.db, transaction)
+    return resource
+  } catch (error) {
+    rollbackLifecycleWriteTransaction(this.db, transaction)
+    throw error
+  }
 }
 
 export function markWorkerTerminalReleaseUnknown(

@@ -48,6 +48,9 @@ export function unservedHostServerMessage(decision: UnservedDecision): string {
   }
   switch (decision.reason) {
     case 'orcad_unavailable':
+      if (decision.detail === 'artifacts_unavailable') {
+        return 'This Orca build doesn’t include the server needed for SSH connections. Use an Orca build that includes the server, then reconnect.'
+      }
       return decision.detail === 'runtime_noexec'
         ? NOEXEC_MESSAGE
         : 'This SSH host isn’t supported by this version of Orca. To keep using it, install an older version of Orca.'

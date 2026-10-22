@@ -35,16 +35,9 @@ import { independentAgentModelCatalog } from './agent-model-catalog-discovery'
 import { PrioritySemaphore } from '../../../shared/priority-semaphore'
 
 /**
- * Serves the host catalog to pickers, never through a session's serialize
- * queue. A session record names its own catalog (the account home pinned at
- * launch); without one, the key is the account a launch would pin right now —
- * never "whichever account listed last". `unknown` tells the client to keep
- * its static seed, and a missing or aged entry kicks one joined background
- * probe so the next read is warm. With no entry, the answer says that listing
- * is running, and only a read that asks waits for it. Failures suppress a new
- * probe for 30s, but never hide another listing already running for the account.
- * A probe failure that says why no chat can start rides every answer as
- * `unavailable` until a later probe answers again.
+ * Serves pickers outside the session queue, scoped to the pinned or selected account.
+ * Missing or aged entries start a joined background probe; an explicit refresh waits.
+ * Failures suppress automatic probes for 30s and retain any launch-unavailable reason.
  */
 export function createAgentModelCatalogService(
   deps: AgentModelCatalogServiceDeps
@@ -164,7 +157,7 @@ export function createAgentModelCatalogService(
       await Promise.all(liveWrites.values())
       await recordingDefaults.get(fingerprint)
       let entry = deps.store.get(fingerprint)
-      const probe = deps.probes?.[params.agent]
+      const probe = workspacePath === null ? undefined : deps.probes?.[params.agent]
       const list = scopedAgentModelCatalogLister({
         legacy: params.legacy,
         admission,
@@ -243,12 +236,13 @@ export function createAgentModelCatalogService(
         return answer(entry)
       }
       // Only a requested wait blocks on rechecking an expired held reason.
-      if (probe && probeHome && !lifetime.signal.aborted && deps.store.heldReasonDue(fingerprint)) {
-        void deps.store.refresh(fingerprint, params.agent, probe, list)
-        if (!params.waitForListing) {
+      const refreshRequested = params.forceRefresh || deps.store.heldReasonDue(fingerprint)
+      if (probe && probeHome && !lifetime.signal.aborted && refreshRequested) {
+        const refreshing = deps.store.refresh(fingerprint, params.agent, probe, list)
+        if (!params.waitForListing && !params.forceRefresh) {
           return answer(entry, { listingInProgress: true })
         }
-        await deps.store.pendingListing(fingerprint, true, params.legacy)
+        await refreshing
         return answer(deps.store.get(fingerprint))
       }
       // Without an entry, answer from any running listing instead of starting a second one.

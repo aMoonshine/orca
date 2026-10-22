@@ -1,4 +1,5 @@
 import type Database from '../../../../sqlite/sync-database'
+import { releaseFileClaimsForDispatchInTransaction } from '../file-claims/file-claim-store'
 import {
   beginLifecycleWriteTransaction,
   commitLifecycleWriteTransaction,
@@ -64,6 +65,7 @@ export function reconcileSettledWorkerDispatches(db: Database.Database): void {
         throw new Error('Invalid worker settlement identity')
       }
       settleWorkerForCompletedDispatch(db, row.dispatch_id)
+      releaseFileClaimsForDispatchInTransaction(db, row.dispatch_id)
     }
     commitLifecycleWriteTransaction(db, transaction)
   } catch (error) {

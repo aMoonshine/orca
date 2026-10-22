@@ -28,6 +28,8 @@ export const SSH_HOST_SERVER_REASON_VALUES = [
   'update_host_newer',
   'update_rolled_back',
   'update_check_failed',
+  'update_no_template',
+  'update_migrating',
   'deployed',
   'converted',
   'source_changed',

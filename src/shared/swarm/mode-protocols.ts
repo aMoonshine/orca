@@ -1,17 +1,4 @@
-/**
- * Multi-agent work modes.
- *
- * A mode describes how a group of agents relates to each other, so it belongs to the
- * Run that groups them and not to any one agent. That is the whole answer to "how do a
- * mode and a launch-many-agents control coexist": they are orthogonal axes. The Run
- * carries the mode; the control chooses how many workers to fan out into it. An agent
- * has no mode of its own to contradict, so nothing has to arbitrate between them.
- *
- * The phase sequences below are the modes' protocols. They are data rather than prompt
- * text so the parts that can be checked, are: `allowsFileClaims` is enforced against
- * the claim table, which is what makes "no code edits in the coordination phase" and
- * "the panel is read-only" real rather than advisory.
- */
+// Modes belong to a Run. Claim admission is enforced; editing limits remain agent instructions.
 
 export type AgentWorkMode = 'solo' | 'fusion' | 'orchestrator' | 'swarm'
 
@@ -33,15 +20,9 @@ export type ModePhase = {
   id: string
   /** Shown in the coordinator UI and used in messages, so it must read as prose. */
   label: string
-  /**
-   * Whether a worker in this phase may claim workspace files.
-   *
-   * This is the enforcement point for three of the spec's rules at once: Swarm's
-   * "code edits are forbidden" during coordination, the Fusion panel's read-only rule,
-   * and the Orchestrator's planning phase where nobody may touch the target yet.
-   */
+  /** Allows ownership claims in this phase; it does not sandbox filesystem writes. */
   allowsFileClaims: boolean
-  /** Whether publishing a standing contract makes sense before anyone can act on it. */
+  /** Advisory discussion flag retained in serialized phases for older clients. */
   allowsDecisions: boolean
   /**
    * Bounded re-entries, the spec's "round limit (2-3)" that stops two agents debating
@@ -68,8 +49,8 @@ const COORDINATION_PHASE = (mode: AgentWorkMode): ModePhase => ({
   maxRounds: null,
   instruction:
     mode === 'swarm'
-      ? 'Do not edit any file. Read the repository, agree who owns what, and publish the signatures and interfaces you have fixed as decisions. Stay silent if you have nothing to add.'
-      : 'Do not edit any file. Read the code and publish the plan and the contracts the others must follow.'
+      ? 'Do not edit any file. Read the repository, agree ownership and interfaces with the coordinator, and record them in the work order. Stay silent if you have nothing to add.'
+      : 'Do not edit any file. Read the code and give the coordinator a plan and the interfaces the workers must follow.'
 })
 
 const IMPLEMENTATION_PHASE = (mode: AgentWorkMode): ModePhase => ({
@@ -81,7 +62,7 @@ const IMPLEMENTATION_PHASE = (mode: AgentWorkMode): ModePhase => ({
   instruction:
     mode === 'fusion'
       ? 'Implement the work order exactly. If the project contradicts it, stop and report the deviation instead of improvising.'
-      : 'Write code only inside the paths you claimed, and only against the contracts that are already frozen.'
+      : 'Write code only inside the paths you claimed and follow the work order agreed with the coordinator. Report interface changes before proceeding.'
 })
 
 const CATCHUP_PHASE: ModePhase = {
@@ -93,7 +74,7 @@ const CATCHUP_PHASE: ModePhase = {
   // mid-generation; more than that is debate, not work.
   maxRounds: 2,
   instruction:
-    'Read what arrived while you were generating, adjust your own code to the frozen contracts, then stop. Do not open a new round of debate.'
+    'Read the coordinator updates that arrived while you were working, adjust your own code to the agreed work order, then stop. Do not open a new round of debate.'
 }
 
 const PANEL_PHASE: ModePhase = {
@@ -116,7 +97,7 @@ const JUDGE_PHASE: ModePhase = {
   allowsDecisions: true,
   maxRounds: null,
   instruction:
-    'Do not write an answer from scratch. Compare the panels on agreement, contradiction, unique findings, unique architecture, and blind spots, then issue the work order as frozen decisions.'
+    'Do not write an answer from scratch. Compare the panels on agreement, contradiction, unique findings, unique architecture, and blind spots, then give the coordinator a work order for the integrator.'
 }
 
 const INTEGRATOR_PHASE: ModePhase = {
@@ -126,7 +107,7 @@ const INTEGRATOR_PHASE: ModePhase = {
   allowsDecisions: true,
   maxRounds: null,
   instruction:
-    'You are the only writer. Implement the frozen decisions exactly and report every place the project forced you to deviate.'
+    'You are the only writer. Implement the work order agreed with the coordinator and report every place the project forced you to deviate.'
 }
 
 const PLANNING_PHASE: ModePhase = {
@@ -138,7 +119,7 @@ const PLANNING_PHASE: ModePhase = {
   allowsDecisions: true,
   maxRounds: null,
   instruction:
-    'Do not write any file. Split the work into independent units with disjoint file ownership and publish the contracts between them as decisions.'
+    'Do not write any file. Split the work into independent units with disjoint file ownership and record their interfaces in the work order for the coordinator.'
 }
 
 const SOLO_PHASES: readonly ModePhase[] = [
@@ -163,14 +144,14 @@ export const MODE_PROTOCOLS: Record<AgentWorkMode, ModeDefinition> = {
     mode: 'swarm',
     label: 'Swarm',
     summary:
-      'Equal peers in one shared directory on one branch. No coordinator between them; contracts are published to each other. The spec says 2-4; nothing here caps the count, so 6 works the same way.',
+      'Workers share a workspace with disjoint file ownership and follow interfaces agreed with the coordinator.',
     phases: [COORDINATION_PHASE('swarm'), IMPLEMENTATION_PHASE('swarm'), CATCHUP_PHASE]
   },
   fusion: {
     mode: 'fusion',
     label: 'Fusion',
     summary:
-      '2-10 independent read-only panels, then a judge, then a single write-only integrator.',
+      'Independent read-only reviewers, then a judge who proposes a work order, then a single integrator.',
     phases: [PANEL_PHASE, JUDGE_PHASE, INTEGRATOR_PHASE]
   },
   orchestrator: {
@@ -180,10 +161,6 @@ export const MODE_PROTOCOLS: Record<AgentWorkMode, ModeDefinition> = {
       'A planner splits the work into units with disjoint file ownership; each worker gets its own worktree; an integrator merges.',
     phases: [PLANNING_PHASE, IMPLEMENTATION_PHASE('orchestrator'), INTEGRATOR_PHASE]
   }
-}
-
-export function modeDefinition(mode: AgentWorkMode): ModeDefinition {
-  return MODE_PROTOCOLS[mode]
 }
 
 export function firstPhaseFor(mode: AgentWorkMode): ModePhase {
@@ -199,10 +176,6 @@ export function nextPhaseFor(mode: AgentWorkMode, phaseId: string): ModePhase | 
   const phases = MODE_PROTOCOLS[mode].phases
   const index = phases.findIndex((phase) => phase.id === phaseId)
   return index === -1 ? undefined : phases[index + 1]
-}
-
-export function isFinalPhase(mode: AgentWorkMode, phaseId: string): boolean {
-  return nextPhaseFor(mode, phaseId) === undefined
 }
 
 /**

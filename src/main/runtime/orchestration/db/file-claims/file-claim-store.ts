@@ -7,6 +7,12 @@ import {
 import type { SqliteRow } from '../../../../sqlite/sqlite-statement'
 import { OrchestrationError } from '../../orchestration-error'
 import type { OrchestrationDb } from '../orchestration-db'
+import type Database from '../../../../sqlite/sync-database'
+import {
+  beginLifecycleWriteTransaction,
+  commitLifecycleWriteTransaction,
+  rollbackLifecycleWriteTransaction
+} from '../lifecycle-transition'
 
 export type WorkerFileClaimRow = {
   run_id: string
@@ -91,10 +97,7 @@ function readClaimRow(
 /**
  * Record which paths a worker owns, refusing any path another live worker holds.
  *
- * Why all-or-nothing per path rather than per call: a worker handed three paths
- * and granted one is in a state no caller can act on - it does not know which edits
- * are safe, and the receipt it reports to its coordinator is wrong either way. Each
- * path resolves independently, and the caller receives both halves of the answer.
+ * A refused batch leaves existing ownership untouched and grants no new paths.
  *
  * Re-claiming a path this dispatch already holds succeeds, so a worker that reports
  * the same scope twice (a retry, or a follow-up dispatch narrowing its own claims) is
@@ -115,18 +118,14 @@ export function claimWorkerFiles(
   const refused: RefusedFileClaim[] = []
   const seen = new Set<string>()
 
-  this.db.exec('BEGIN IMMEDIATE')
+  const transaction = beginLifecycleWriteTransaction(this.db, 'claim_worker_files')
   try {
     for (const path of paths) {
       let claimKey: string
       try {
         claimKey = toClaimPathKey(path, flavor)
       } catch (error) {
-        // Why refuse rather than throw: one malformed path in a list should not discard the
-        // claims its siblings earned. The refusal names the path so the worker can correct it.
-        this.db.exec('ROLLBACK')
         if (error instanceof ClaimPathError) {
-          this.db.exec('BEGIN IMMEDIATE')
           refused.push({
             claimKey: path,
             displayPath: path,
@@ -168,10 +167,14 @@ export function claimWorkerFiles(
         granted.push(row)
       }
     }
-    this.db.exec('COMMIT')
+    if (refused.length > 0) {
+      rollbackLifecycleWriteTransaction(this.db, transaction)
+      return { granted: [], refused }
+    }
+    commitLifecycleWriteTransaction(this.db, transaction)
     return { granted, refused }
   } catch (error) {
-    this.db.exec('ROLLBACK')
+    rollbackLifecycleWriteTransaction(this.db, transaction)
     throw error
   }
 }
@@ -254,10 +257,15 @@ export function findConflictingFileClaims(
  * the same dispatch's ownership intact.
  */
 export function releaseFileClaimsForDispatch(this: OrchestrationDb, dispatchId: string): number {
-  // Why Number(): the driver types `changes` as number | bigint even though a row
-  // count is never bigint here, and callers should not have to narrow it.
+  return releaseFileClaimsForDispatchInTransaction(this.db, dispatchId)
+}
+
+export function releaseFileClaimsForDispatchInTransaction(
+  db: Database.Database,
+  dispatchId: string
+): number {
   return Number(
-    this.db.prepare('DELETE FROM worker_file_claims WHERE dispatch_id = ?').run(dispatchId).changes
+    db.prepare('DELETE FROM worker_file_claims WHERE dispatch_id = ?').run(dispatchId).changes
   )
 }
 

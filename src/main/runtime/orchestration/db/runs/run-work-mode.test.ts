@@ -112,6 +112,70 @@ describe('run work mode', () => {
     db.close()
   })
 
+  it.each(['starting', 'ready', 'start_unknown', 'stopping', 'stop_unknown'] as const)(
+    'refuses phase advance and mode reset while a worker is %s without recording an event',
+    (state) => {
+      const { db, runId } = swarmRun()
+      db.advanceRunPhase({ runId })
+      const started = db.createStartingWorkerDispatch({
+        creator: { kind: 'system' },
+        maxDepth: 10,
+        taskRunId: runId,
+        taskSpec: 'active writer',
+        startOptions: {}
+      })
+      db.db
+        .prepare('UPDATE worker_dispatches SET state = ? WHERE dispatch_id = ?')
+        .run(state, started.dispatch.id)
+      const before = db.getRunWorkMode(runId)
+      const events = db.listRunPhaseEvents(runId)
+      for (const change of [
+        () => db.advanceRunPhase({ runId }),
+        () => db.setRunWorkMode({ runId, mode: 'swarm' }),
+        () => db.setRunWorkMode({ runId, mode: 'fusion' })
+      ]) {
+        expect(change).toThrowError(expect.objectContaining({ code: 'run_phase_workers_active' }))
+        expect(db.getRunWorkMode(runId)).toEqual(before)
+        expect(db.listRunPhaseEvents(runId)).toEqual(events)
+      }
+      db.close()
+    }
+  )
+
+  it('retains the phase while an unresolved claim exists and advances after explicit release', () => {
+    const { db, runId } = swarmRun()
+    db.advanceRunPhase({ runId })
+    db.claimWorkerFiles({
+      runId,
+      workspaceId: 'folder',
+      dispatchId: 'legacy_writer',
+      paths: ['src/app.ts'],
+      flavor: 'case_sensitive'
+    })
+    const events = db.listRunPhaseEvents(runId)
+    expect(() => db.advanceRunPhase({ runId })).toThrowError(
+      expect.objectContaining({ code: 'run_phase_workers_active' })
+    )
+    expect(() => db.setRunWorkMode({ runId, mode: 'solo' })).toThrowError(
+      expect.objectContaining({ code: 'run_phase_workers_active' })
+    )
+    expect(db.listRunPhaseEvents(runId)).toEqual(events)
+    db.releaseFileClaimsForDispatch('legacy_writer')
+    expect(db.advanceRunPhase({ runId }).phaseId).toBe('catchup')
+    db.close()
+  })
+
+  it('composes phase changes with a caller-owned writer transaction', () => {
+    const { db, runId } = swarmRun()
+    db.db.exec('BEGIN IMMEDIATE')
+    expect(db.advanceRunPhase({ runId }).phaseId).toBe('implementation')
+    expect(db.setRunWorkMode({ runId, mode: 'fusion' }).phaseId).toBe('panel')
+    db.db.exec('ROLLBACK')
+    expect(db.getRunWorkMode(runId)).toMatchObject({ mode: 'swarm', phaseId: 'coordination' })
+    expect(db.listRunPhaseEvents(runId)).toHaveLength(1)
+    db.close()
+  })
+
   it('refuses file claims during the read-only coordination phase', () => {
     const { db, runId } = swarmRun()
 

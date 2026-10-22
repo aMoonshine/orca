@@ -1,11 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import '../../../unused-default-rpc-methods.test-fixture'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createOrchestrationRpcHarness } from '../rpc-test-harness'
 import { OrchestrationDb } from '../../../../orchestration/db'
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
 import { buildDispatchPreamble } from '../../../../orchestration/preamble'
 import {
   claimPathFlavorForWorkspace,
+  bindWorkerStartFiles,
   claimWorkerStartFiles,
-  parseClaimPaths
+  parseClaimPaths,
+  reserveWorkerStartFiles
 } from './worker-start-file-claims'
 
 /**
@@ -25,6 +29,120 @@ describe('worker-start file claims', () => {
     workspacePath: 'C:\\repo'
   }
 
+  it('requires a real workspace identity and path when recording final claims', () => {
+    const db = newDb()
+    for (const workspace of [
+      { workspaceId: '', workspacePath: 'C:\\repo' },
+      { workspaceId: 'wt', workspacePath: '' }
+    ]) {
+      expect(() =>
+        claimWorkerStartFiles({ db, ...SCOPE, ...workspace, dispatchId: 'a', claims: 'src/a.ts' })
+      ).toThrow()
+    }
+    expect(db.listFileClaimsForDispatch('a')).toEqual([])
+    db.close()
+  })
+
+  it('preserves an uncertain starting worker reservation instead of rebinding it', () => {
+    const db = newDb()
+    const started = db.createStartingWorkerDispatch({
+      creator: { kind: 'system' },
+      maxDepth: 10,
+      taskRunId: SCOPE.runId,
+      taskSpec: 'uncertain placement',
+      startOptions: {}
+    })
+    const reservation = reserveWorkerStartFiles({
+      db,
+      runId: SCOPE.runId,
+      dispatchId: started.dispatch.id,
+      claims: 'src/app.ts'
+    })
+    db.markWorkerStartUnknown(started.dispatch.id, 'worktree_create', 'connection lost')
+    expect(() =>
+      bindWorkerStartFiles({ db, ...SCOPE, dispatchId: started.dispatch.id, claims: 'src/app.ts' })
+    ).toThrow(/starting worker reservation/)
+    expect(db.listFileClaimsForDispatch(started.dispatch.id)).toEqual(reservation.claims)
+    db.close()
+  })
+
+  it('reserves independent new workspaces and binds Windows case rules before a prompt', () => {
+    const db = newDb()
+    const reservation = reserveWorkerStartFiles({
+      db,
+      runId: SCOPE.runId,
+      dispatchId: 'a',
+      claims: 'SRC/App.ts'
+    })
+    const peer = reserveWorkerStartFiles({
+      db,
+      runId: SCOPE.runId,
+      dispatchId: 'b',
+      claims: 'SRC/App.ts'
+    })
+    expect(reservation.claims[0].workspace_id).not.toBe('')
+    expect(peer.claims[0].workspace_id).not.toBe(reservation.claims[0].workspace_id)
+
+    const bound = bindWorkerStartFiles({ db, ...SCOPE, dispatchId: 'a', claims: 'SRC/App.ts' })
+    expect(bound.claims).toMatchObject([
+      { workspace_id: SCOPE.workspaceId, claim_key: 'src/app.ts' }
+    ])
+    expect(db.listFileClaimsForDispatch('a')).toEqual(bound.claims)
+    expect(() =>
+      claimWorkerStartFiles({ db, ...SCOPE, dispatchId: 'c', claims: 'src/app.ts' })
+    ).toThrow(/already claimed/)
+    expect(() =>
+      bindWorkerStartFiles({
+        db,
+        ...SCOPE,
+        workspaceId: 'another-worktree',
+        dispatchId: 'b',
+        claims: 'src/app.ts'
+      })
+    ).not.toThrow()
+    db.close()
+  })
+
+  it('binds POSIX claims with case sensitivity and restores reservations after a refused bind', () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    const db = newDb()
+    reserveWorkerStartFiles({ db, runId: SCOPE.runId, dispatchId: 'a', claims: 'SRC/App.ts' })
+    bindWorkerStartFiles({
+      db,
+      ...SCOPE,
+      workspacePath: '/repo',
+      dispatchId: 'a',
+      claims: 'SRC/App.ts'
+    })
+    claimWorkerStartFiles({
+      db,
+      ...SCOPE,
+      workspacePath: '/repo',
+      dispatchId: 'b',
+      claims: 'src/app.ts'
+    })
+    const reserved = reserveWorkerStartFiles({
+      db,
+      runId: SCOPE.runId,
+      dispatchId: 'c',
+      claims: 'SRC/App.ts,src/new.ts'
+    })
+
+    expect(() =>
+      bindWorkerStartFiles({
+        db,
+        ...SCOPE,
+        workspacePath: '/repo',
+        dispatchId: 'c',
+        claims: 'SRC/App.ts,src/new.ts'
+      })
+    ).toThrow(/already claimed/)
+    expect(db.listFileClaimsForDispatch('c')).toEqual(reserved.claims)
+    expect(db.listWorkerFileClaims(SCOPE)).toHaveLength(2)
+    db.close()
+    vi.restoreAllMocks()
+  })
+
   describe('parseClaimPaths', () => {
     it('reads a comma-separated list and drops blanks', () => {
       expect(parseClaimPaths('src/a.ts, src/b.ts ,')).toEqual(['src/a.ts', 'src/b.ts'])
@@ -34,10 +152,41 @@ describe('worker-start file claims', () => {
   })
 
   describe('claimPathFlavorForWorkspace', () => {
-    it('follows the workspace filesystem, not the running host', () => {
+    it('uses conservative case folding for macOS and unknown POSIX roots', () => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+      expect(claimPathFlavorForWorkspace('/Users/me/repo')).toBe('case_insensitive')
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
       expect(claimPathFlavorForWorkspace('C:\\repo')).toBe('case_insensitive')
-      // A POSIX root reached over SSH is case-sensitive even from a Windows host.
+      expect(claimPathFlavorForWorkspace('/home/me/repo')).toBe('case_insensitive')
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
       expect(claimPathFlavorForWorkspace('/home/me/repo')).toBe('case_sensitive')
+      expect(claimPathFlavorForWorkspace('\\\\wsl.localhost\\Ubuntu\\home\\me')).toBe(
+        'case_sensitive'
+      )
+      vi.restoreAllMocks()
+    })
+
+    it('refuses macOS case aliases held by another worker', () => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+      const db = newDb()
+      claimWorkerStartFiles({
+        db,
+        ...SCOPE,
+        workspacePath: '/Users/me/repo',
+        dispatchId: 'mac_a',
+        claims: 'SRC/App.ts'
+      })
+      expect(() =>
+        claimWorkerStartFiles({
+          db,
+          ...SCOPE,
+          workspacePath: '/Users/me/repo',
+          dispatchId: 'mac_b',
+          claims: 'src/app.ts'
+        })
+      ).toThrow(/already claimed/)
+      db.close()
+      vi.restoreAllMocks()
     })
   })
 
@@ -147,6 +296,195 @@ describe('worker-start file claims', () => {
     })
     expect(granted.claims).toHaveLength(1)
     db.close()
+  })
+})
+
+describe('worker-start placement claim ordering', () => {
+  const harness = createOrchestrationRpcHarness()
+  afterEach(() => harness.cleanup())
+
+  function setup() {
+    const state = harness.setup()
+    const { runtime, db } = state
+    const worktree = (id: string) => {
+      const git = {
+        path: 'C:\\repo\\created',
+        head: 'abc',
+        branch: 'main',
+        isBare: false,
+        isMainWorktree: false
+      }
+      return {
+        ...git,
+        id,
+        repoId: 'repo',
+        displayName: id,
+        comment: '',
+        linkedIssue: null,
+        linkedPR: null,
+        linkedLinearIssue: null,
+        isArchived: false,
+        isUnread: false,
+        isPinned: false,
+        sortOrder: 0,
+        lastActivityAt: 0,
+        linkedItems: [],
+        parentWorktreeId: null,
+        childWorktreeIds: [],
+        lineage: null,
+        git
+      }
+    }
+    const workerTerminal = {
+      handle: 'term_worker',
+      ptyId: 'pty_worker',
+      worktreeId: 'created',
+      worktreePath: 'C:\\repo\\created',
+      branch: 'main',
+      tabId: 'tab_worker',
+      leafId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      title: 'Codex',
+      connected: true,
+      writable: true,
+      lastOutputAt: null,
+      preview: ''
+    }
+    vi.spyOn(runtime, 'validateOrchestrationAgentLauncher').mockImplementation(() => {})
+    vi.mocked(runtime.getTerminalPaneKey).mockImplementation((handle) =>
+      handle === 'term_coord'
+        ? harness.coordinatorPaneKey
+        : 'tab_worker:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    )
+    vi.spyOn(runtime, 'showTerminal').mockResolvedValue({
+      ...workerTerminal,
+      handle: 'term_coord',
+      worktreeId: 'parent',
+      paneRuntimeId: 1,
+      rendererGraphEpoch: 1
+    })
+    vi.spyOn(runtime, 'showManagedWorktree').mockResolvedValue(worktree('parent'))
+    vi.spyOn(runtime, 'showManagedTerminalWorkspace').mockImplementation(async (selector) =>
+      worktree(selector.replace(/^id:/, ''))
+    )
+    vi.spyOn(runtime, 'showRepo').mockResolvedValue({
+      id: 'repo',
+      kind: 'git',
+      path: 'C:\\repo',
+      displayName: 'repo',
+      badgeColor: 'blue',
+      addedAt: 0
+    })
+    vi.spyOn(runtime, 'listTerminals').mockResolvedValue({
+      terminals: [workerTerminal],
+      totalCount: 1,
+      truncated: false
+    })
+    vi.spyOn(runtime, 'waitForTerminal').mockResolvedValue({
+      handle: 'term_worker',
+      condition: 'tui-idle',
+      satisfied: true,
+      status: 'running',
+      exitCode: null
+    })
+    vi.spyOn(runtime, 'getTerminalOrchestrationCliCommand').mockReturnValue('orca')
+    const prompt = vi.spyOn(runtime, 'sendTerminalAgentPrompt').mockImplementation(async () => {
+      const worker = db.getActiveDispatchForTerminal('term_worker')
+      if (!worker) {
+        throw new Error('Expected authority before prompt delivery')
+      }
+      const claims = db.listFileClaimsForDispatch(worker.id)
+      expect(claims).toMatchObject([{ workspace_id: 'created', claim_key: 'src/app.ts' }])
+      return { handle: 'term_worker', accepted: true, bytesWritten: 1 }
+    })
+    const create = vi.spyOn(runtime, 'createManagedWorktree').mockImplementation(async () => {
+      if (!state.activeRunId) {
+        throw new Error('Expected active Run')
+      }
+      expect(db.listWorkerFileClaims({ runId: state.activeRunId, workspaceId: '' })).toEqual([])
+      return {
+        worktree: worktree('created'),
+        startupTerminal: { spawned: true, handle: 'term_worker' },
+        setupReceipt: {
+          requested: 'skip',
+          hookFound: false,
+          startupPolicy: 'start-immediately',
+          state: 'skipped'
+        }
+      }
+    })
+    const terminal = vi.spyOn(runtime, 'createTerminal')
+    return { ...state, prompt, create, terminal }
+  }
+
+  it.each(['new-child', 'new-top-level'])(
+    'binds %s claims to the actual workspace before task delivery',
+    async (worktree) => {
+      const { db, ctx, create, prompt } = setup()
+      const task = db.createTask({ spec: 'new workspace claims' })
+      const result = await harness.call(
+        'orchestration.workerStart',
+        {
+          task: task.id,
+          from: 'term_coord',
+          agent: 'codex',
+          worktree,
+          name: 'created',
+          claims: 'SRC/App.ts',
+          setup: 'skip'
+        },
+        ctx
+      )
+      expect(result).toMatchObject({ state: 'ready' })
+      expect(create).toHaveBeenCalledOnce()
+      expect(prompt).toHaveBeenCalledOnce()
+      expect(db.listWorkerFileClaims({ runId: task.run_id, workspaceId: 'created' })).toHaveLength(
+        1
+      )
+    }
+  )
+
+  it('refuses existing workspace conflicts before terminal creation or task delivery', async () => {
+    const { db, ctx, create, prompt, terminal } = setup()
+    const task = db.createTask({ spec: 'existing workspace claims' })
+    db.claimWorkerFiles({
+      runId: task.run_id,
+      workspaceId: 'parent',
+      dispatchId: 'peer',
+      paths: ['src/app.ts'],
+      flavor: 'case_insensitive'
+    })
+    const result = await harness.call(
+      'orchestration.workerStart',
+      { task: task.id, from: 'term_coord', agent: 'codex', claims: 'SRC/App.ts' },
+      ctx
+    )
+    expect(result).toMatchObject({ state: 'failed', failedStage: 'file_claim' })
+    expect(create).not.toHaveBeenCalled()
+    expect(terminal).not.toHaveBeenCalled()
+    expect(prompt).not.toHaveBeenCalled()
+    expect(db.listFileClaimsForDispatch('peer')).toHaveLength(1)
+  })
+
+  it('refuses new workspace claims during a read-only phase before placement', async () => {
+    const { db, ctx, create, prompt, terminal } = setup()
+    const task = db.createTask({ spec: 'read-only admission' })
+    db.setRunWorkMode({ runId: task.run_id, mode: 'swarm' })
+    const result = await harness.call(
+      'orchestration.workerStart',
+      {
+        task: task.id,
+        from: 'term_coord',
+        agent: 'codex',
+        worktree: 'new-child',
+        name: 'created',
+        claims: 'src/a.ts'
+      },
+      ctx
+    )
+    expect(result).toMatchObject({ state: 'failed', failedStage: 'file_claim' })
+    expect(create).not.toHaveBeenCalled()
+    expect(terminal).not.toHaveBeenCalled()
+    expect(prompt).not.toHaveBeenCalled()
   })
 })
 

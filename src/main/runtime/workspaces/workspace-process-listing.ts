@@ -21,7 +21,11 @@ import type { Repo } from '../../../shared/repo-types'
 import type { StructuredAgentId } from '../../../shared/agent-session-provider-handle'
 import type { GlobalSettings } from '../../../shared/global-settings-types'
 import { enrichMissingRepoGitRemoteIdentities } from '../../repo-git-remote-identity-enrichment'
-import { ensureStructuredAgentSessionHost as installStructuredAgentSessionHost } from '../structured-agent-session-runtime'
+import {
+  ensureStructuredAgentSessionHost as installStructuredAgentSessionHost,
+  type StructuredAgentSessionRuntimeDeps
+} from '../structured-agent-session-runtime'
+import { ensureStructuredAgentModelCatalog } from '../structured-agent-model-catalog-wiring'
 import {
   createStructuredAttentionMobileDelivery,
   readStructuredAttentionWorkspaceLabels
@@ -221,38 +225,17 @@ export abstract class OrcaRuntimeWithGetWorktreePs extends OrcaRuntimeWithWorktr
     return store
   }
 
-  /**
-   * Installs the structured agent-session host on first use. Lazy for the same
-   * reason the orchestration DB is: the profile's user-data path is not final
-   * until the app is ready, and a runtime nobody drives a chat session on never
-   * builds the chat host. The record store it sits on may already be open, from
-   * a launch's admission.
-   */
-  async ensureStructuredAgentSessionHost(): Promise<void> {
-    const logger = createStructuredAgentSessionLogger()
-    const nameChat = createStructuredChatNamingHandler(
-      structuredChatNamingDeps(
-        () => this.requireStore(),
-        {
-          resolveWorkspace: async (workspaceId) => {
-            const target = await this.resolveRuntimeFileTarget(`id:${workspaceId}`)
-            return { path: target.worktree.path, executionHostId: target.executionHostId }
-          },
-          getAgentEnvResolvers: () => this.getCommitMessageAgentEnvironmentResolvers(),
-          workerTaskTitle: (record) =>
-            structuredWorkerOpenTaskTitle(this.getOrchestrationDbIfAvailable?.() ?? null, record),
-          retitleOpenTab: (workspaceId, sessionId) =>
-            this.refreshStructuredConversationTabTitle(workspaceId, sessionId)
-        },
-        logger
-      )
-    )
-    await installStructuredAgentSessionHost({
+  async getStructuredAgentModelCatalog() {
+    return ensureStructuredAgentModelCatalog(this.structuredAgentSessionDeps())
+  }
+
+  private structuredAgentSessionDeps(): StructuredAgentSessionRuntimeDeps {
+    return {
       stateDirectory: getProfileUserDataPath(),
       hostId: LOCAL_EXECUTION_HOST_ID,
       claimKeyId: this.agentSessionClaimSigner.keyId,
       // The host's local trace file (the desktop's or orcad's own), plus the console.
-      logger,
+      logger: createStructuredAgentSessionLogger(),
       // Resolves folder workspaces as well as git worktrees, so a chat session
       // in a plain folder lands in the folder rather than failing to resolve.
       resolveWorkspacePath: async (workspaceId) =>
@@ -285,7 +268,38 @@ export abstract class OrcaRuntimeWithGetWorktreePs extends OrcaRuntimeWithWorktr
       resolveAgentAccountHome: (agent) => this.resolveStructuredAgentAccountHome(agent),
       ...(this.prepareCodexCatalogProbeHomeFn
         ? { prepareCodexCatalogProbeHome: this.prepareCodexCatalogProbeHomeFn }
-        : {}),
+        : {})
+    }
+  }
+
+  /**
+   * Installs the structured agent-session host on first use. Lazy for the same
+   * reason the orchestration DB is: the profile's user-data path is not final
+   * until the app is ready, and a runtime nobody drives a chat session on never
+   * builds the chat host. The record store it sits on may already be open, from
+   * a launch's admission.
+   */
+  async ensureStructuredAgentSessionHost(): Promise<void> {
+    const logger = createStructuredAgentSessionLogger()
+    const nameChat = createStructuredChatNamingHandler(
+      structuredChatNamingDeps(
+        () => this.requireStore(),
+        {
+          resolveWorkspace: async (workspaceId) => {
+            const target = await this.resolveRuntimeFileTarget(`id:${workspaceId}`)
+            return { path: target.worktree.path, executionHostId: target.executionHostId }
+          },
+          getAgentEnvResolvers: () => this.getCommitMessageAgentEnvironmentResolvers(),
+          workerTaskTitle: (record) =>
+            structuredWorkerOpenTaskTitle(this.getOrchestrationDbIfAvailable?.() ?? null, record),
+          retitleOpenTab: (workspaceId, sessionId) =>
+            this.refreshStructuredConversationTabTitle(workspaceId, sessionId)
+        },
+        logger
+      )
+    )
+    await installStructuredAgentSessionHost({
+      ...this.structuredAgentSessionDeps(),
       // Structured chat has no agent CLI hooks, so this projection is what the first-work
       // workspace rename listens to instead of `agentStatus:set`.
       onSessionStatusChanged: (summary, options) => {

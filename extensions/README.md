@@ -1,7 +1,7 @@
 # Maintaining this Orca fork
 
 `origin` is `aMoonshine/orca`; `upstream` is `stablyai/orca`. Our changes live on
-`feat/swarm-mode`, based on upstream `31012aeb0928`. Keep upstream history intact
+`feat/swarm-mode`, with upstream `de2700d0fbb9` merged in `b7928b836`. Keep upstream history intact
 and keep engineering source imports separate from Orca integration commits.
 
 To update, start from a clean working tree and make an integration branch:
@@ -19,11 +19,12 @@ changed-code quality gate. Review the result before merging it back into
 `feat/swarm-mode` and pushing to `origin`. Do not force-push the fork's shared
 branch or overwrite upstream's main branch with our feature branch.
 
-Pay special attention to schema migrations: the Swarm foundation adds versions
-43–45. If upstream later uses those numbers, reconcile both migration chains and
-test every starting schema version. Never simply delete a migration or reduce
-the stored version. Back up the application profile before testing an update
-that changes its database.
+Schema version 46 reconciles the fork's versions 43–45 with upstream's version
+43 through `migrate-v46.ts`: it applies the fork tables and upstream session
+address migration to both lineages. For later updates, check both migration
+chains and test every supported starting version. Never delete a migration or
+reduce the stored version. Back up the application profile before testing an
+update that changes its database.
 
 ## Extension boundaries
 
@@ -31,11 +32,18 @@ that changes its database.
   small prompt adapter. This is a candidate for future plugin extraction.
 - Agent group UI: `src/renderer/src/components/agent-group` and
   `src/renderer/src/lib/agent-group-*`. It uses the existing orchestration RPCs.
-- Modes, phases, decisions and file claims live in the orchestration runtime and
+- Modes, phases and file claims live in the orchestration runtime and
   database. They currently require core changes; packaging the UI as a plugin
   alone would not remove those dependencies.
 - Desktop orchestration request envelopes carry the protocol version and unique
   mutation IDs. Remote hosts need the matching runtime features.
+
+Coordinators pass agreed interfaces and work orders through task instructions or
+project documents; there is no standing-decision runtime API. Historical decision
+tables and their shipped migrations remain to preserve existing profile data.
+Upstream decision gates remain available independently. Modes and claims operate
+on the workspace's owning runtime; federated `worker-start --on` currently
+accepts only Solo without file claims.
 
 See [agent groups](../docs/reference/agent-groups.md) for behavior and limitations.
 

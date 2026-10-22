@@ -9,7 +9,7 @@ const REPORT_RETRY_DELAY_MS = 250
 
 const lastReportByPaneKey = new Map<string, number>()
 
-// Fires only from the real-user-input signal (never xterm auto-replies, programmatic prompt
+// Fires only from the conversation-input signal (never xterm auto-replies, programmatic prompt
 // delivery, resize, or output) and lands on the terminal-owning runtime, where the takeover is
 // recorded durably in the orchestration DB.
 export function reportWorkerTerminalUserInput(
