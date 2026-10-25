@@ -1,6 +1,7 @@
 {
   "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
   "include": [
+    "../src/packages/swarm/src/shared/**/*",
     "../electron.vite.config.*",
     "./vitest.config.ts",
     "./build-plugins/**/*",

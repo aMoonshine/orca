@@ -1,0 +1,21 @@
+{
+  "name": "@orca-fork/swarm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Built-in source extension for Orca team orchestration and panel workflows",
+  "type": "commonjs",
+  "exports": {
+    "./renderer": {
+      "orca-source": "./src/renderer/index.ts",
+      "default": "./src/renderer/index.ts"
+    },
+    "./modes": {
+      "orca-source": "./src/shared/mode-protocols.ts",
+      "default": "./src/shared/mode-protocols.ts"
+    },
+    "./file-claims": {
+      "orca-source": "./src/shared/file-claim-path-key.ts",
+      "default": "./src/shared/file-claim-path-key.ts"
+    }
+  }
+}

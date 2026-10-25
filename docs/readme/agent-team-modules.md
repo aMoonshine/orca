@@ -2,7 +2,7 @@
 
 The master team is an internal module with an explicit host interface. It is not
 an installable Orca plugin. Its implementation lives in
-`src/renderer/src/lib/agent-team/`.
+`src/packages/swarm/src/renderer/lib/agent-team/`.
 
 ## Ownership
 
@@ -22,12 +22,13 @@ React. `createAgentTeamClient` can be exercised with a different host and sessio
 store without initializing the desktop. Instances own separate polling and panel
 membership maps. The desktop deliberately uses one shared instance.
 
-The module still consumes Orca's shared configuration, prompt, target and group
-types. This refactor does not make it a standalone package.
+The lifecycle module belongs to the [Swarm source package](../../src/packages/swarm/README.md).
+Configuration, prompts and group types are owned by that package; runtime-target
+types and host operations remain Orca dependencies. It is compiled with our fork.
 
 ## UI integration
 
-UI callers import `agentTeams` from `@/lib/agent-team`. Its interface provides:
+UI callers import `agentTeams` from the package's `lib/agent-team` entry point. Its interface provides:
 
 - `start({ target, worktreeId, configuration, objective })`;
 - `readSession(target, worktreeId)` and `detachSession(target, worktreeId)`;
@@ -65,6 +66,13 @@ set using the existing panel implementation.
 Snapshots retain usable task data alongside partial-host diagnostics. A missing
 host does not imply that its agents exited. This module neither retries workers
 nor judges completion nor advances orchestration phases.
+
+## Distribution without upstream API changes
+
+The supported path is the built-in Swarm source package plus our maintained core
+changes. Its package README documents extension development and upstream updates.
+The following plugin limitations explain why an unmodified Orca binary is not a
+supported installation target.
 
 ## Independent plugin distribution
 

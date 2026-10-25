@@ -10,6 +10,8 @@ importers:
         specifier: 12.14.0
         version: 12.14.0
 
+  src/packages/swarm: {}
+
 packages:
 
   '@pnpm/exe.android-arm64@12.14.0':

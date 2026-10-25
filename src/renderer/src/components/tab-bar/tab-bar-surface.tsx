@@ -25,7 +25,7 @@ import type { TabBarItemActions } from './use-tab-bar-item-actions'
 import { renderTabBarItems } from './tab-bar-item-surface'
 import { TabBarStaticCreateMenu } from './tab-bar-static-create-menu'
 import ClientHostedBrowserTabRows from './ClientHostedBrowserTabRows'
-import { AgentGroupLauncher } from '../agent-group/AgentGroupLauncher'
+import { AgentGroupLauncher } from '@/extensions/swarm'
 import type { ClientHostedBrowserRow } from '../../../../shared/client-hosted-browser-rows'
 
 const EMPTY_CLIENT_HOSTED_ROWS: readonly ClientHostedBrowserRow[] = []

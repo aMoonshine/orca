@@ -21,6 +21,7 @@ const PLACEHOLDER_RE = /\{\{[^}]+\}\}/g
 const LOCALES_RELATIVE_DIR = path.join('src', 'renderer', 'src', 'i18n', 'locales')
 export const LOCALIZATION_SOURCE_ROOTS = [
   path.join('src', 'renderer', 'src'),
+  path.join('src', 'packages', 'swarm', 'src', 'renderer'),
   path.join('src', 'main')
 ]
 

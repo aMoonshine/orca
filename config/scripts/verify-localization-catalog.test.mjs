@@ -24,6 +24,7 @@ function makeProject({ sourceText, enCatalog = {}, esCatalog = {} }) {
   const localesDir = path.join(root, 'src', 'renderer', 'src', 'i18n', 'locales')
 
   mkdirSync(rendererDir, { recursive: true })
+  mkdirSync(path.join(root, 'src', 'packages', 'swarm', 'src', 'renderer'), { recursive: true })
   mkdirSync(mainDir, { recursive: true })
   mkdirSync(localesDir, { recursive: true })
 
@@ -36,6 +37,17 @@ function makeProject({ sourceText, enCatalog = {}, esCatalog = {} }) {
 }
 
 describe('verify-localization-catalog', () => {
+  it('keeps built-in extension translations in the catalog after source extraction', async () => {
+    const { root, localesDir } = makeProject({ sourceText: 'export {}' })
+    writeFileSync(
+      path.join(root, 'src', 'packages', 'swarm', 'src', 'renderer', 'Example.tsx'),
+      "export const label = translate('team.example', 'Team workspace')\n",
+      'utf8'
+    )
+    await expect(verifyLocalizationCatalog(root, { fix: false })).resolves.toBe(1)
+    await verifyLocalizationCatalog(root, { fix: true })
+    expect(readJson(path.join(localesDir, 'en.json')).team.example).toBe('Team workspace')
+  })
   it('bootstraps English entries without fabricating target translations', async () => {
     const { root, localesDir } = makeProject({
       sourceText:

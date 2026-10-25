@@ -24,7 +24,7 @@ There is no automatic handoff from the interview to a group.
 - `grilling` and `writing-for-agents` from productivity are included dependencies.
 - [source.json](source.json) records the upstream revision and SHA-256 of every
   vendored file. The generated catalog embeds Markdown and local reference docs.
-- `src/shared/engineering-workflow.ts` owns Orca's dependency selection and prompt
+- `src/packages/swarm/src/shared/engineering-workflow.ts` owns Orca's dependency selection and prompt
   adapter. It explicitly overrides upstream grilling's multi-question rounds
   with the user's chosen one-question dialogue. Original source stays untouched.
 

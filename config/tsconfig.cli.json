@@ -3,6 +3,7 @@
   // Why only roots: src/main files come in through imports. check-runtime-electron-ratchet.mjs
   // keeps Electron out of that graph.
   "include": [
+    "../src/packages/swarm/src/shared/**/*",
     "../src/cli/**/*",
     "../src/shared/**/*",
     "../src/shared/editor-language/monaco-language-associations.json",

@@ -4,16 +4,20 @@
 `feat/swarm-mode`, with upstream `de2700d0fbb9` merged in `b7928b836`. Keep upstream history intact
 and keep engineering source imports separate from Orca integration commits.
 
-To update, start from a clean working tree and make an integration branch:
+To update, use a clean, dedicated integration worktree based on the fork:
 
 ```sh
 git fetch upstream main
-git switch feat/swarm-mode
-git switch -c integrate/upstream-YYYY-MM-DD
+git worktree add -b integrate/upstream-YYYY-MM-DD ../orca-update-YYYY-MM-DD feat/swarm-mode
+cd ../orca-update-YYYY-MM-DD
+node config/scripts/check-swarm-integration.mjs --upstream upstream/main
 git merge upstream/main
 ```
 
-Resolve conflicts, regenerate RPC parameter catalogs and bundled skill guides,
+Review the update check before merging. Exit 2 reports overlapping paths that
+need review; exit 1 reports a failed check. Follow the
+[extension update procedure](../src/packages/swarm/README.md) using the project's
+supported Node runtime. Resolve conflicts, regenerate RPC parameter catalogs and bundled skill guides,
 run node/web/CLI typechecks, orchestration and touched-feature tests, and the
 changed-code quality gate. Review the result before merging it back into
 `feat/swarm-mode` and pushing to `origin`. Do not force-push the fork's shared
@@ -30,20 +34,12 @@ update that changes its database.
 
 - [Engineering](engineering/README.md): licensed, pinned source package plus a
   small prompt adapter. This is a candidate for future plugin extraction.
-- Agent group UI: `src/renderer/src/components/agent-group` and
-  `src/renderer/src/lib/agent-group-*`. It uses the existing orchestration RPCs.
-- Master sessions: `src/renderer/src/lib/agent-team/`. `session.ts` validates and
-  starts a session, `session-state.ts` owns saved identity, and `monitor.ts` owns
-  shared polling and subscription lifetime. The UI imports `agentTeams` from
-  `agent-team/index.ts`; `use-agent-team.ts` is the React subscription bridge.
-  `createAgentTeamClient(host, sessions)` composes the session and monitor modules
-  using the explicit `AgentTeamHost` and `TeamSessionStore` interfaces.
-  `runtime.ts` contains Orca-specific RPC, launch, store and panel operations.
-  Saved keys and launch receipts are unchanged. Unknown submission outcomes keep
-  the master attached to prevent duplicate launches. This is an internal module
-  boundary, not a separately installable plugin or a new orchestration protocol.
-  See [master team modules](../docs/readme/agent-team-modules.md) for ownership,
-  integration rules and the remaining requirements for plugin distribution.
+- [Swarm source extension](../src/packages/swarm/README.md): master and manual
+  team UI, lifecycle, profiles, prompts, panel arrangement and pure mode/claim
+  policies live in `src/packages/swarm`. The renderer uses one host entry module;
+  core mode/claim callers retain stable shared facades. `integration.json` pins
+  upstream and records host dependencies. The read-only update check reports
+  upstream overlaps before integration. The package is built with our fork.
 - Modes, phases and file claims live in the orchestration runtime and
   database. They currently require core changes; packaging the UI as a plugin
   alone would not remove those dependencies.

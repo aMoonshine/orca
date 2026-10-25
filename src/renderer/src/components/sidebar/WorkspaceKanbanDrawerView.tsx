@@ -4,7 +4,7 @@ import WorkspaceKanbanDrawerHeader from './WorkspaceKanbanDrawerHeader'
 import WorkspaceKanbanLaneGrid from './WorkspaceKanbanLaneGrid'
 import WorkspaceKanbanPinDropTarget from './WorkspaceKanbanPinDropTarget'
 import WorkspaceKanbanSheet from './WorkspaceKanbanSheet'
-import { ActiveAgentTeam } from '../agent-group/ActiveAgentTeam'
+import { ActiveAgentTeam } from '@/extensions/swarm'
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
 
