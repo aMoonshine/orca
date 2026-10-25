@@ -3,10 +3,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
 import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
-import { readTeamSession, startAgentTeam, teamSessionKey } from '@/lib/agent-team-session'
+import { startAgentTeam } from '@/lib/agent-team/session'
+import { readTeamSession, detachTeamSession, teamSessionKey } from '@/lib/agent-team/session-state'
+import { openMasterSession } from '@/lib/agent-team/runtime'
 import type { GroupWorker } from '@/lib/agent-group-launch'
 import type { TabAgentLaunchOption } from '../tab-bar/tab-agent-launch-options'
 import { AgentGroupWorkers } from './AgentGroupWorkers'
@@ -126,18 +127,12 @@ function AgentTeamControlForm({ target, worktreeId, options, onClose }: AgentTea
         <>
           <Button
             onClick={() => {
-              const state = useAppStore.getState()
-              const tab = state.unifiedTabsByWorktree[worktreeId]?.find(
-                (entry) => entry.id === session.tabId || entry.entityId === session.tabId
-              )
-              if (!tab) {
-                setError(
-                  'The master panel is unavailable. Inspect the workspace before starting another team.'
-                )
-                return
+              try {
+                openMasterSession(worktreeId, session)
+                onClose()
+              } catch (reason) {
+                setError(reason instanceof Error ? reason.message : String(reason))
               }
-              state.activateTab(tab.id, { worktreeId })
-              onClose()
             }}
           >
             {translate('agentTeam.open', 'Open master chat')}
@@ -156,7 +151,7 @@ function AgentTeamControlForm({ target, worktreeId, options, onClose }: AgentTea
             <Button
               variant="outline"
               onClick={() => {
-                localStorage.removeItem(key)
+                detachTeamSession(key)
                 setSession(null)
               }}
             >

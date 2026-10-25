@@ -6,11 +6,11 @@ import { agentTeamPresetKey, writeAgentTeamPresets } from '@/lib/agent-team-pres
 import type { AgentTeamConfiguration } from '../../../../shared/agent-team-configuration'
 
 const mocks = vi.hoisted(() => ({ start: vi.fn(), models: vi.fn() }))
-vi.mock('@/lib/agent-team-session', () => ({
+vi.mock('@/lib/agent-team/session-state', () => ({
   readTeamSession: () => null,
-  teamSessionKey: () => 'test-team',
-  startAgentTeam: mocks.start
+  teamSessionKey: () => 'test-team'
 }))
+vi.mock('@/lib/agent-team/session', () => ({ startAgentTeam: mocks.start }))
 vi.mock('@/lib/agent-group-model-discovery', () => ({
   agentGroupModelDiscoveryContextKey: () => 'test',
   loadAgentGroupModels: mocks.models

@@ -6,7 +6,7 @@ import { useAppStore } from '@/store'
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock('@/runtime/runtime-rpc-client', () => ({ callRuntimeRpc: mocks.rpc }))
 import { useAgentTeam } from './use-agent-team'
-import { teamSessionKey } from './agent-team-session'
+import { teamSessionKey } from './agent-team/session-state'
 
 const worktreeId = 'folder:polled-team'
 const target = { kind: 'local' as const }
@@ -72,6 +72,28 @@ afterEach(() => {
 })
 
 describe('automatic team panel arrangement', () => {
+  it('cancels handle discovery when the last subscriber leaves', async () => {
+    localStorage.setItem(teamSessionKey(target, worktreeId), JSON.stringify({ tabId: 'master' }))
+    let finish: ((result: unknown) => void) | undefined
+    mocks.rpc.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        })
+    )
+    const monitor = renderHook(() => useAgentTeam(target, worktreeId, true))
+    await act(async () => {})
+    expect(mocks.rpc.mock.calls[0][1]).toBe('terminal.list')
+    const signal: AbortSignal = mocks.rpc.mock.calls[0][3].signal
+    monitor.unmount()
+    expect(signal.aborted).toBe(true)
+    await act(async () => {
+      finish?.({ terminals: [{ tabId: 'master', handle: 'master' }] })
+    })
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    expect(useAppStore.getState().groupsByWorktree[worktreeId]).toBeUndefined()
+  })
+
   it('requests remote workers and preserves partial-host diagnostics beside usable tasks', async () => {
     const original = mocks.rpc.getMockImplementation()!
     mocks.rpc.mockImplementation(async (scope, method, params, options) => {

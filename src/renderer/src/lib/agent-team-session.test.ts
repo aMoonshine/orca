@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ launch: vi.fn(), rpc: vi.fn() }))
 vi.mock('./launch-agent-in-new-tab', () => ({ launchAgentInNewTab: mocks.launch }))
 vi.mock('@/runtime/runtime-rpc-client', () => ({ callRuntimeRpc: mocks.rpc }))
-import { startAgentTeam, readTeamSession, teamSessionKey } from './agent-team-session'
+import { startAgentTeam } from './agent-team/session'
+import { readTeamSession, teamSessionKey } from './agent-team/session-state'
 
 const args = {
   target: { kind: 'local' as const },
@@ -144,5 +145,17 @@ describe('master session lifecycle', () => {
     await expect(startAgentTeam(args)).rejects.toThrow('connection lost')
     await expect(startAgentTeam(args)).rejects.toThrow('existing master')
     expect(mocks.launch).toHaveBeenCalledTimes(1)
+  })
+  it('keeps a rejected submission attached and prevents a duplicate launch', async () => {
+    const original = mocks.rpc.getMockImplementation()!
+    mocks.rpc.mockImplementation(async (target, method, params, options) =>
+      method === 'terminal.send'
+        ? { send: { accepted: false } }
+        : original(target, method, params, options)
+    )
+    await expect(startAgentTeam(args)).rejects.toThrow('did not accept')
+    await expect(startAgentTeam(args)).rejects.toThrow('existing master')
+    expect(mocks.launch).toHaveBeenCalledTimes(1)
+    expect(mocks.rpc.mock.calls.filter(([, method]) => method === 'terminal.send')).toHaveLength(1)
   })
 })

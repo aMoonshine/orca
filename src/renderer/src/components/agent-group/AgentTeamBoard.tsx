@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
-import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
+import { openTeamWorker } from '@/lib/agent-team/runtime'
 import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 import { useAgentTeam } from '@/lib/use-agent-team'
 import { AgentGroupInbox } from './AgentGroupInbox'
@@ -82,10 +82,7 @@ export function AgentTeamBoard({
                             size="xs"
                             variant="outline"
                             onClick={() =>
-                              void callRuntimeRpc(target, 'terminal.focus', {
-                                terminal: handle,
-                                navigation: 'caller'
-                              }).catch((reason: unknown) =>
+                              void openTeamWorker(target, handle).catch((reason: unknown) =>
                                 setOpenError(
                                   reason instanceof Error ? reason.message : String(reason)
                                 )
