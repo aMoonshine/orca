@@ -34,12 +34,16 @@ update that changes its database.
   `src/renderer/src/lib/agent-group-*`. It uses the existing orchestration RPCs.
 - Master sessions: `src/renderer/src/lib/agent-team/`. `session.ts` validates and
   starts a session, `session-state.ts` owns saved identity, and `monitor.ts` owns
-  shared polling and subscription lifetime. `runtime.ts` contains Orca-specific
-  RPC, launch, store and panel operations. `use-agent-team.ts` is the React
-  subscription bridge; UI components call these modules instead of issuing RPCs.
+  shared polling and subscription lifetime. The UI imports `agentTeams` from
+  `agent-team/index.ts`; `use-agent-team.ts` is the React subscription bridge.
+  `createAgentTeamClient(host, sessions)` composes the session and monitor modules
+  using the explicit `AgentTeamHost` and `TeamSessionStore` interfaces.
+  `runtime.ts` contains Orca-specific RPC, launch, store and panel operations.
   Saved keys and launch receipts are unchanged. Unknown submission outcomes keep
   the master attached to prevent duplicate launches. This is an internal module
   boundary, not a separately installable plugin or a new orchestration protocol.
+  See [master team modules](../docs/readme/agent-team-modules.md) for ownership,
+  integration rules and the remaining requirements for plugin distribution.
 - Modes, phases and file claims live in the orchestration runtime and
   database. They currently require core changes; packaging the UI as a plugin
   alone would not remove those dependencies.

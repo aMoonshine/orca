@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
-import { openTeamWorker } from '@/lib/agent-team/runtime'
+import { agentTeams } from '@/lib/agent-team'
 import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 import { useAgentTeam } from '@/lib/use-agent-team'
 import { AgentGroupInbox } from './AgentGroupInbox'
@@ -82,11 +82,13 @@ export function AgentTeamBoard({
                             size="xs"
                             variant="outline"
                             onClick={() =>
-                              void openTeamWorker(target, handle).catch((reason: unknown) =>
-                                setOpenError(
-                                  reason instanceof Error ? reason.message : String(reason)
+                              void agentTeams
+                                .openWorker(target, handle)
+                                .catch((reason: unknown) =>
+                                  setOpenError(
+                                    reason instanceof Error ? reason.message : String(reason)
+                                  )
                                 )
-                              )
                             }
                           >
                             {translate('agentTeam.openWorker', 'Open agent')}

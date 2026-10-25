@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import type { RuntimeClientTarget } from '../../../shared/runtime-client-target'
-import { getAgentTeamSnapshot, subscribeToAgentTeam } from './agent-team/monitor'
+import { agentTeams } from './agent-team'
 
 export function useAgentTeam(target: RuntimeClientTarget, worktreeId: string, arrange = false) {
   const environmentId = target.kind === 'environment' ? target.environmentId : undefined
@@ -10,11 +10,11 @@ export function useAgentTeam(target: RuntimeClientTarget, worktreeId: string, ar
     [environmentId]
   )
   const subscribe = useCallback(
-    (listener: () => void) => subscribeToAgentTeam(runtimeTarget, worktreeId, listener, arrange),
+    (listener: () => void) => agentTeams.subscribe(runtimeTarget, worktreeId, listener, arrange),
     [runtimeTarget, worktreeId, arrange]
   )
   const getSnapshot = useCallback(
-    () => getAgentTeamSnapshot(runtimeTarget, worktreeId),
+    () => agentTeams.getSnapshot(runtimeTarget, worktreeId),
     [runtimeTarget, worktreeId]
   )
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)

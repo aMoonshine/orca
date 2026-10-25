@@ -6,7 +6,7 @@ import { useAppStore } from '@/store'
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock('@/runtime/runtime-rpc-client', () => ({ callRuntimeRpc: mocks.rpc }))
 import { useAgentTeam } from './use-agent-team'
-import { teamSessionKey } from './agent-team/session-state'
+import { teamSessionKey } from './agent-team'
 
 const worktreeId = 'folder:polled-team'
 const target = { kind: 'local' as const }

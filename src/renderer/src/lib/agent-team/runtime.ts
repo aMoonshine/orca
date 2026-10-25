@@ -7,8 +7,8 @@ import { getAgentSessionOptionCatalog } from '../../../../shared/agent-session-o
 import { newAgentLaunchRequestId } from '../agent-launch-request-id'
 import { launchAgentInNewTab } from '../launch-agent-in-new-tab'
 import { showAgentGroupPanels } from '../agent-group-panels'
-import type { GroupRpc, GroupRun, GroupTask } from '../agent-group-launch'
-import type { TeamSession } from './session-state'
+import type { GroupRpc } from '../agent-group-launch'
+import { emptyTeamSnapshot, type TeamSession, type TeamSnapshot } from './contracts'
 
 const tasksSchema = z.object({
   tasks: z.array(
@@ -32,13 +32,6 @@ const workersSchema = z.object({
   ),
   partialHostErrors: z.array(z.object({ environmentId: z.string(), code: z.string() })).optional()
 })
-export type TeamSnapshot = {
-  run: GroupRun | null
-  tasks: GroupTask[]
-  workers: z.infer<typeof workersSchema>['workers']
-  error: string | null
-}
-export const emptyTeamSnapshot: TeamSnapshot = { run: null, tasks: [], workers: [], error: null }
 
 export function launchMasterTerminal(
   worktreeId: string,

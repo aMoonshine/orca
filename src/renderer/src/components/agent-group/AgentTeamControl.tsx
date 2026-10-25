@@ -5,9 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { translate } from '@/i18n/i18n'
 import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
-import { startAgentTeam } from '@/lib/agent-team/session'
-import { readTeamSession, detachTeamSession, teamSessionKey } from '@/lib/agent-team/session-state'
-import { openMasterSession } from '@/lib/agent-team/runtime'
+import { agentTeams, teamSessionKey } from '@/lib/agent-team'
 import type { GroupWorker } from '@/lib/agent-group-launch'
 import type { TabAgentLaunchOption } from '../tab-bar/tab-agent-launch-options'
 import { AgentGroupWorkers } from './AgentGroupWorkers'
@@ -45,8 +43,7 @@ function AgentTeamControlForm({ target, worktreeId, options, onClose }: AgentTea
   const [parallelismHint, setParallelismHint] = useState(6)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const key = teamSessionKey(target, worktreeId)
-  const [session, setSession] = useState(() => readTeamSession(key))
+  const [session, setSession] = useState(() => agentTeams.readSession(target, worktreeId))
   const parsedConfiguration = agentTeamConfigurationSchema.safeParse({
     leader: leader[0] && {
       agent: leader[0].agent,
@@ -101,7 +98,7 @@ function AgentTeamControlForm({ target, worktreeId, options, onClose }: AgentTea
     setBusy(true)
     setError(null)
     try {
-      await startAgentTeam({
+      await agentTeams.start({
         target,
         worktreeId,
         configuration,
@@ -111,7 +108,7 @@ function AgentTeamControlForm({ target, worktreeId, options, onClose }: AgentTea
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
-      setSession(readTeamSession(key))
+      setSession(agentTeams.readSession(target, worktreeId))
       setBusy(false)
     }
   }
@@ -128,7 +125,7 @@ function AgentTeamControlForm({ target, worktreeId, options, onClose }: AgentTea
           <Button
             onClick={() => {
               try {
-                openMasterSession(worktreeId, session)
+                agentTeams.openMaster(target, worktreeId)
                 onClose()
               } catch (reason) {
                 setError(reason instanceof Error ? reason.message : String(reason))
@@ -151,7 +148,7 @@ function AgentTeamControlForm({ target, worktreeId, options, onClose }: AgentTea
             <Button
               variant="outline"
               onClick={() => {
-                detachTeamSession(key)
+                agentTeams.detachSession(target, worktreeId)
                 setSession(null)
               }}
             >

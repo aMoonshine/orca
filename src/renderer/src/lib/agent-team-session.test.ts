@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ launch: vi.fn(), rpc: vi.fn() }))
 vi.mock('./launch-agent-in-new-tab', () => ({ launchAgentInNewTab: mocks.launch }))
 vi.mock('@/runtime/runtime-rpc-client', () => ({ callRuntimeRpc: mocks.rpc }))
-import { startAgentTeam } from './agent-team/session'
-import { readTeamSession, teamSessionKey } from './agent-team/session-state'
+import { agentTeams, teamSessionKey } from './agent-team'
+import { readTeamSession } from './agent-team/session-state'
+
+const startAgentTeam = agentTeams.start
 
 const args = {
   target: { kind: 'local' as const },
